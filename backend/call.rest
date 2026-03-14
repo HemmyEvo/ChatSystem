@@ -1,17 +1,17 @@
-POST http://localhost:3000/auth/login
+POST http://localhost:3000/api/auth/login
 
 ###
-POST http://localhost:3000/auth/register
+POST http://localhost:3000/api/auth/register
 
 
 ###
-GET http://localhost:3000/auth/logout
+GET http://localhost:3000/api/auth/logout
 
 
 
 ### Message Routes
-POST http://localhost:3000/message/send
+POST http://localhost:3000/api/message/send
 
 
 ###
-GET http://localhost:3000/message/receive
+GET http://localhost:3000/api/message/receive
