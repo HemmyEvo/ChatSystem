@@ -1,8 +1,20 @@
 POST http://localhost:3000/api/auth/login
+Content-Type: application/json
+
+{
+    "email": "atilolaemmanuel22@gmail.com",
+    "password": "Test1234"
+}
 
 ###
 POST http://localhost:3000/api/auth/register
+Content-Type: application/json
 
+{
+    "fullname": "Atilola Emmanuel",
+    "email": "atilolaemmanuel22@gmail.com",
+    "password": "Test1234"
+}
 
 ###
 GET http://localhost:3000/api/auth/logout

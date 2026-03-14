@@ -1,7 +1,8 @@
 import express from 'express';
 import dotenv from 'dotenv';
-import authRoutes from './controller/routes/auth.js';
-import messageRoutes from './controller/routes/message.js';
+import authRoutes from './routes/auth.js';
+import messageRoutes from './routes/message.js';
+import { connectDB } from './lib/db.js';
 
 dotenv.config();
 
@@ -19,6 +20,7 @@ console.log(`Environment: ${process.env.NODE_ENV}`);
 if (!process.env.VERCEL) {
   app.listen(port, () => {
     console.log(`Server is running locally on http://localhost:${port}`);
+    connectDB();
   });
 }
 
