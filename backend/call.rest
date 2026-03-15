@@ -7,7 +7,7 @@ Content-Type: application/json
 }
 
 ###
-POST https://chat-system-brown.vercel.app/api/auth/register
+POST http://localhost:3000/api/auth/register
 Content-Type: application/json
 
 {
@@ -19,6 +19,19 @@ Content-Type: application/json
 ###
 GET http://localhost:3000/api/auth/logout
 
+
+###
+GET http://localhost:3000/api/auth/check-auth
+
+
+###
+PUT http://localhost:3000/api/auth/update-profile
+Content-Type: application/json
+
+{
+    "fullname": "Atilola Emmanuel Oluwatoba"
+
+}
 
 
 ### Message Routes

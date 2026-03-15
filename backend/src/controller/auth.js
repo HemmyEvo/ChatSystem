@@ -1,3 +1,4 @@
+import cloudinary from "../lib/cloudinary.js";
 import { generateToken } from "../lib/utlis.js";
 import User from "../models/User.js";
 import bcrypt from "bcryptjs";
@@ -65,8 +66,8 @@ export const authController = {
 
         const newUser = new User({ fullname, email, password: passwordHash });
         if(newUser){
-            const token = generateToken(newUser._id, res);
             await newUser.save();
+            const token = generateToken(newUser._id, res);
             res.status(201).json({ 
                 message: 'User registered successfully',
                 data: { id: newUser._id, fullname: newUser.fullname, email: newUser.email }, 
@@ -80,14 +81,31 @@ export const authController = {
        }
     },
 
-
-
-    logout: (req, res) => {
+    //logout from an account
+    logout: (_, res) => {
         res.clearCookie('token', {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             sameSite: 'strict',
         });
         res.status(200).json({ message: 'Logout successful' });
-    }
+    },
+
+    //Update user profile
+    updateProfile:async (req, res) => {
+        try {
+            const { profilePic } = req.body;
+            if (!profilePic) return res.status(400).json({ message: 'Profile picture is required' });
+            const userId = req.user._id;
+           const uploadResult = await cloudinary.uploader.upload(profilePic)
+           const updatedUser = await User.findByIdAndUpdate(userId, { profilePic: uploadResult.secure_url }, { new: true });
+           return res.status(200).json({ message: 'Profile updated successfully', data: updatedUser });
+
+        } catch (error) {
+            console.error('Error uploading profile picture:', error);
+            return res.status(500).json({ message: 'Error uploading profile picture' });
+        }
+    },
+    
+
 }

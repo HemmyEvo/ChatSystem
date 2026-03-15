@@ -3,14 +3,14 @@ import dotenv from 'dotenv';
 import authRoutes from './routes/auth.js';
 import messageRoutes from './routes/message.js';
 import { connectDB } from './lib/db.js';
-
+import cookieParser from 'cookie-parser';
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(express.json());
-
+app.use(cookieParser());
 connectDB();
 
 // 1. ADDED "/api" prefix so it matches your vercel.json rewrites
