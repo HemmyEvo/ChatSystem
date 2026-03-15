@@ -1,9 +1,9 @@
 import express from 'express';
 import { authController } from '../controller/auth.js';
-import { protectRoute } from '../lib/utlis.js';
+import { arjectProtection, protectRoute } from '../lib/utlis.js';
 
 const router = express.Router();
-
+router.use(arjectProtection); // Apply Arcjet protection to all routes in this router
 router.post('/login', authController.login);
 
 router.post('/register', authController.register);
