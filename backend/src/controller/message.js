@@ -50,7 +50,7 @@ export const messageController = {
         try{
             const myId = req.user._id;
             const { id:userToChatId } = req.params; 
-            if(myId.toString() === userToChatId){
+            if(myId === userToChatId){
                 return res.status(400).json({ message: "Cannot fetch messages with yourself" });
             }  
             const messages = await Message.find({
@@ -72,11 +72,16 @@ export const messageController = {
             const {text, image} = req.body;
             const senderId = req.user._id;
             const { id:receiverId } = req.params;
-            if(senderId.toString() === receiverId){
+        
+            if(senderId === receiverId){
                 return res.status(400).json({ message: "Cannot send message to yourself" });
             }
             if(!text && !image){
                 return res.status(400).json({ message: "Message content is required" });
+            }
+            const receiver = await User.findById(receiverId);
+            if(!receiver){
+                return res.status(404).json({ message: "Receiver not found" });
             }
             let imageUrl;
             if(image){
