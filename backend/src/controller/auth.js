@@ -44,7 +44,6 @@ export const authController = {
     //Register an account
     register: async (req, res) => {
        const { fullname, email, password } = req.body;
-       
        try{
         if(!fullname || !email || !password){
             return res.status(400).json({ message: 'All fields are required' });
