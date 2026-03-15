@@ -1,15 +1,12 @@
 import express from 'express';
-
+import { messageController } from '../controller/message.js';
+import { protectRoute, arjectProtection } from '../lib/utlis.js';
 const router = express.Router();
-
-router.post('/send', (req, res) => {
-    // Handle sending a message
-    res.send('Send message endpoint');
-});
-
-router.get("/receive", (req, res) => {
-    // Handle receiving messages
-    res.send('Receive messages endpoint');
-});
+router.use(arjectProtection, protectRoute); // Apply authentication middleware to all routes in this router
+router.get('/contact', messageController.contact )
+router.get('/chats', messageController.chats )
+router.get('/:id', messageController.messageById );
+router.post("/send/:id", messageController.sendMessage ); 
+router.delete("/delete/:id", messageController.deleteMessage); 
 
 export default router;
