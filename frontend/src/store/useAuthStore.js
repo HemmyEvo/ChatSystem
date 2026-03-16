@@ -24,7 +24,7 @@ export const useAuthStore = create((set) => ({
     set({ isloggingin: true });
     try {
         const res = await api.post('/auth/login', data);
-        set({ authUser: res.data });
+        set({ authUser: res.data.data });
         toast.success("Login successful!");
     }
     catch (error) {
@@ -40,7 +40,7 @@ export const useAuthStore = create((set) => ({
         set({ isSigningup: true });
         try {
             const res = await api.post('/auth/register', data);
-            set({ authUser: res.data });
+            set({ authUser: res.data.data });
             toast.success("Account created successfully!");
         }
         catch (error) {
@@ -66,11 +66,11 @@ export const useAuthStore = create((set) => ({
     try {
       const res = await api.put("/auth/update-profile", data);
       console.log("Profile update response:", res.data);
-      set({ authUser: res.data });
+      set({ authUser: res.data.data });
       toast.success("Profile updated successfully");
     } catch (error) {
       console.log("Error in update profile:", error );
-      toast.error(error?.message);
+      toast.error(error.response?.data?.message || "Failed to update profile");
     }
   },
 }));
