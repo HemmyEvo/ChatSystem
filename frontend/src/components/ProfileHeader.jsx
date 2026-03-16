@@ -9,50 +9,22 @@ function ProfileHeader() {
   const { logout, authUser, updateProfile } = useAuthStore();
   const { isSoundEnabled, toggleSound } = useChatStore();
   const [selectedImg, setSelectedImg] = useState(null);
-
+  console.log("Auth User in ProfileHeader:", authUser);
   const fileInputRef = useRef(null);
 
-  const MAX_IMAGE_WIDTH = 512;
-
-  const compressImage = (file) =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-
-      reader.onload = () => {
-        const image = new Image();
-        image.src = reader.result;
-
-        image.onload = () => {
-          const scale = Math.min(1, MAX_IMAGE_WIDTH / image.width);
-          const canvas = document.createElement("canvas");
-          canvas.width = Math.round(image.width * scale);
-          canvas.height = Math.round(image.height * scale);
-
-          const ctx = canvas.getContext("2d");
-          if (!ctx) return reject(new Error("Unable to process image"));
-
-          ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-          resolve(canvas.toDataURL("image/jpeg", 0.8));
-        };
-
-        image.onerror = reject;
-      };
-
-      reader.onerror = reject;
-    });
-
-  const handleImageUpload = async (e) => {
+  const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    try {
-      const base64Image = await compressImage(file);
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+
+    reader.onloadend = async () => {
+      const base64Image = reader.result;
       setSelectedImg(base64Image);
+      console.log("Selected image:", base64Image);
       await updateProfile({ profilePic: base64Image });
-    } catch (error) {
-      console.error("Failed to process profile image:", error);
-    }
+    };
   };
 
   return (
@@ -66,7 +38,7 @@ function ProfileHeader() {
               onClick={() => fileInputRef.current.click()}
             >
               <img
-                src={selectedImg || authUser.profilePic || "/avatar.png"}
+                src={selectedImg || authUser.data.profilePicture || "/avatar.png"}
                 alt="User image"
                 className="size-full object-cover"
               />
@@ -87,7 +59,7 @@ function ProfileHeader() {
           {/* USERNAME & ONLINE TEXT */}
           <div>
             <h3 className="text-slate-200 font-medium text-base max-w-[180px] truncate">
-              {authUser.fullName}
+              {authUser.data.fullname}
             </h3>
 
             <p className="text-slate-400 text-xs">Online</p>

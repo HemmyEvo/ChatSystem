@@ -96,9 +96,16 @@ export const authController = {
             const { profilePic } = req.body;
             if (!profilePic) return res.status(400).json({ message: 'Profile picture is required' });
             const userId = req.user._id;
-           const uploadResult = await cloudinary.uploader.upload(profilePic)
-           console.log("Cloudinary upload result:", uploadResult);
-           const updatedUser = await User.findByIdAndUpdate(userId, { profilePic: uploadResult.secure_url }, { new: true }).select('-password');
+           const uploadResult = await cloudinary.uploader.upload(profilePic);
+           console.log('Upload Result:', uploadResult);
+           console.log('User ID:', userId);
+          
+            const updatedUser = await User.findByIdAndUpdate(
+                userId,
+                { profilePicture: uploadResult.secure_url },
+                { new: true }
+            )
+        console.log('Updated User:', updatedUser);
            return res.status(200).json({ message: 'Profile updated successfully', data: updatedUser });
 
         } catch (error) {
