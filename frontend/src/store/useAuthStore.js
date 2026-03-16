@@ -25,6 +25,7 @@ export const useAuthStore = create((set) => ({
     try {
         const res = await api.post('/auth/login', data);
         set({ authUser: res.data.data });
+        useAuthStore.getState().checkAuth();
         toast.success("Login successful!");
     }
     catch (error) {
@@ -41,6 +42,7 @@ export const useAuthStore = create((set) => ({
         try {
             const res = await api.post('/auth/register', data);
             set({ authUser: res.data.data });
+            useAuthStore.getState().checkAuth();
             toast.success("Account created successfully!");
         }
         catch (error) {
@@ -65,7 +67,6 @@ export const useAuthStore = create((set) => ({
     updateProfile: async (data) => {
     try {
       const res = await api.put("/auth/update-profile", data);
-      console.log("Profile update response:", res.data);
       set({ authUser: res.data.data });
       toast.success("Profile updated successfully");
     } catch (error) {

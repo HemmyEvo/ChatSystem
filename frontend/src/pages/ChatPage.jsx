@@ -1,4 +1,3 @@
-import { useAuthStore } from '../store/useAuthStore.js';
 import BorderAnimated from '../components/BorderAnimated.jsx';
 import ProfileHeader from '../components/ProfileHeader.jsx';
 import ActiveTabSwitch from '../components/ActiveTabSwitch.jsx';
@@ -15,7 +14,7 @@ function ChatPage() {
     <div className="relative w-full max-w-6xl h-[800px]">
       <BorderAnimated>
       {/* Left side - contacts list */}
-      <div className="w-80 bg-slate-800/50 backdrop-blur-sm flex flex-col">
+      <div className={` ${selectedUser ? 'hidden md:flex' : 'block'} w-full md:w-80  bg-slate-800/50 backdrop-blur-sm flex flex-col`}>
         <ProfileHeader />
         <ActiveTabSwitch />
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
@@ -24,7 +23,7 @@ function ChatPage() {
       </div>
 
       {/* Right side - chat area */}
-      <div className="flex-1 flex flex-col bg-slate-900/50 backdrop-blur-sm">
+      <div className={`md:flex-1 flex flex-col bg-slate-900/50 backdrop-blur-sm ${selectedUser ? 'flex-1' : ''}`}>
         {selectedUser ? <ChatContainer /> : <NoConversationPlacehoder />}
       </div>
       </BorderAnimated>

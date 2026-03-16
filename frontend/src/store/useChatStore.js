@@ -25,7 +25,7 @@ export const useChatStore = create((set,get) => ({
     set({ isUsersLoading: true });
     try{
         const res = await api.get("/message/contact");
-        set({ allContacts: res.data });
+        set({ allContacts: res.data.filteredUsers });
     }catch (error) {
         console.error('Error signing up:', error);
         toast.error(error.response?.data?.message || 'Failed to sign up');
@@ -39,7 +39,7 @@ export const useChatStore = create((set,get) => ({
         set({ isUsersLoading: true });
         try{
             const res = await api.get("/message/chats");
-            set({ chats: res.data });
+            set({ chats: res.data.chatPartners });
         }catch (error) {
             console.error('Error signing up:', error);
             toast.error(error.response?.data?.message || 'Failed to sign up');

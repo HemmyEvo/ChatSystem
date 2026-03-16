@@ -15,32 +15,45 @@ export const messageController = {
     chats: async (req, res) => {
         try {
             const loggedInUserId = req.user._id;
-            const messages = await Message.find({
-                $or: [
-                    { senderId: loggedInUserId },
-                    { receiverId: loggedInUserId }
-                ]
-            }).sort({ createdAt: -1 });
 
-            const chatMap = new Map();
+    // find all the messages where the logged-in user is either sender or receiver
+    const messages = await Message.find({
+      $or: [{ senderId: loggedInUserId }, { receiverId: loggedInUserId }],
+    });
 
-            messages.forEach(msg => {
-                const otherUserId = msg.senderId === loggedInUserId ? msg.receiverId : msg.senderId;
-                if (!chatMap.has(otherUserId)) {
-                    chatMap.set(otherUserId, msg);
-                }
-            });
+    const chatPartnerIds = [
+      ...new Set(
+        messages.map((msg) =>
+          msg.senderId.toString() === loggedInUserId.toString()
+            ? msg.receiverId.toString()
+            : msg.senderId.toString()
+        )
+      ),
+    ];
+    const lastmessage = {};
+    messages.forEach((msg) => {
+      const partnerId =
+        msg.senderId.toString() === loggedInUserId.toString()
+          ? msg.receiverId.toString()
+          : msg.senderId.toString();
+      if (
+        !lastmessage[partnerId] ||
+        new Date(msg.createdAt) > new Date(lastmessage[partnerId].createdAt)
+      ) {
+        lastmessage[partnerId] = msg;
+      }
+    });
 
-            const chats = [];
-            for (const [otherUserId, lastMessage] of chatMap.entries()) {
-                const user = await User.findById(otherUserId).select('username profilePicture');
-                chats.push({
-                    user,
-                    lastMessage
-                });
-            }
+    const chatPartners = await User.find({ _id: { $in: chatPartnerIds } }).select("-password");
 
-            return res.status(200).json({ chats });
+    res.status(200).json({chatPartners: chatPartners.map((partner) => ({
+      _id: partner._id,
+      fullname: partner.fullname,
+      email: partner.email,
+      profilePicture: partner.profilePicture,
+      lastMessage: lastmessage[partner._id.toString()] || null,
+    })) 
+});
         } catch (error) {
             console.log('Error fetching chats:', error);
             return res.status(500).json({ message: "Server error"});

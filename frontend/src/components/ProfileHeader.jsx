@@ -9,7 +9,6 @@ function ProfileHeader() {
   const { logout, authUser, updateProfile } = useAuthStore();
   const { isSoundEnabled, toggleSound } = useChatStore();
   const [selectedImg, setSelectedImg] = useState(null);
-  console.log("Auth User in ProfileHeader:", authUser);
   const fileInputRef = useRef(null);
 
   const handleImageUpload = (e) => {
@@ -38,7 +37,7 @@ function ProfileHeader() {
               onClick={() => fileInputRef.current.click()}
             >
               <img
-                src={selectedImg || authUser.data.profilePicture || "/avatar.png"}
+                src={selectedImg || authUser?.data?.profilePicture || "/avatar.png"}
                 alt="User image"
                 className="size-full object-cover"
               />
@@ -59,7 +58,7 @@ function ProfileHeader() {
           {/* USERNAME & ONLINE TEXT */}
           <div>
             <h3 className="text-slate-200 font-medium text-base max-w-[180px] truncate">
-              {authUser.data.fullname}
+              {authUser?.data?.fullname}
             </h3>
 
             <p className="text-slate-400 text-xs">Online</p>

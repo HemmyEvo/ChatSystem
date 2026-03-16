@@ -15,6 +15,14 @@ Content-Type: application/json
     "email": "atilolaemmanuel2023@gmail.com",
     "password": "Test1234"
 }
+###
+POST http://localhost:3000/api/auth/login
+Content-Type: application/json
+
+{
+    "email": "atilolaemmanuel23@gmail.com",
+    "password": "Test1234"
+}
 
 
 ###
@@ -22,8 +30,8 @@ POST http://localhost:3000/api/auth/register
 Content-Type: application/json
 
 {
-    "fullname": "Atilola Emmanuel",
-    "email": "atilolaemmanuel23@gmail.com",
+    "fullname": "Samuel",
+    "email": "atilolaemmanuel22@gmail.com",
     "password": "Test1234"
 }
 
@@ -59,12 +67,10 @@ POST   http://localhost:3000/api/message/send/69b6ab1e0652066a480f9916
 Content-Type: application/json
 
 {
-    "text": "My day was good, how about yours?"
+    "text": "What are you doing?"
 }
 
 
-###
-GET http://localhost:3000/api/message
 
 ###
 GET http://localhost:3000/api/message/69b58d2924bf49d97d8c4999
@@ -74,4 +80,4 @@ GET http://localhost:3000/api/message/chats
 
 
 ###
-DELETE  http://localhost:3000/api/message/delete/69b6ddf7d248b3d6aecd9777
+DELETE  http://localhost:3000/api/message/delete/69b6df246382e5506e9271f6
