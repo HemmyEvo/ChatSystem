@@ -12,19 +12,47 @@ function ProfileHeader() {
 
   const fileInputRef = useRef(null);
 
-  const handleImageUpload = (e) => {
+  const MAX_IMAGE_WIDTH = 512;
+
+  const compressImage = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+
+      reader.onload = () => {
+        const image = new Image();
+        image.src = reader.result;
+
+        image.onload = () => {
+          const scale = Math.min(1, MAX_IMAGE_WIDTH / image.width);
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.round(image.width * scale);
+          canvas.height = Math.round(image.height * scale);
+
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return reject(new Error("Unable to process image"));
+
+          ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", 0.8));
+        };
+
+        image.onerror = reject;
+      };
+
+      reader.onerror = reject;
+    });
+
+  const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-
-    reader.onloadend = async () => {
-      const base64Image = reader.result;
+    try {
+      const base64Image = await compressImage(file);
       setSelectedImg(base64Image);
-      console.log("Selected image:", base64Image);
       await updateProfile({ profilePic: base64Image });
-    };
+    } catch (error) {
+      console.error("Failed to process profile image:", error);
+    }
   };
 
   return (
