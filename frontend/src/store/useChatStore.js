@@ -6,22 +6,101 @@ import { useAuthStore } from "./useAuthStore";
 const updateChatWithLastMessage = (chats, message) => {
   const me = useAuthStore.getState().authUser?._id;
   const partnerId = message.senderId === me ? message.receiverId : message.senderId;
-  return chats
-    .map((chat) => (chat._id === partnerId ? { ...chat, lastMessage: message } : chat))
-    .sort((a, b) => new Date(b.lastMessage?.createdAt || 0) - new Date(a.lastMessage?.createdAt || 0));
+  const nextChats = chats.map((chat) => {
+    if (chat._id !== partnerId) return chat;
+
+    const currentUnread = Number(chat.unreadCount || 0);
+    const shouldIncreaseUnread = message.senderId === partnerId && !(message.readBy || []).includes(me);
+
+    return {
+      ...chat,
+      lastMessage: message,
+      unreadCount: shouldIncreaseUnread ? currentUnread + 1 : currentUnread,
+    };
+  });
+
+  return nextChats.sort((a, b) => {
+    const aPinned = Number(a.pinOrder ?? Infinity);
+    const bPinned = Number(b.pinOrder ?? Infinity);
+    if (aPinned !== bPinned) return aPinned - bPinned;
+    return new Date(b.lastMessage?.createdAt || 0) - new Date(a.lastMessage?.createdAt || 0);
+  });
 };
 
-export const useChatStore = create((set, get) => ({
-  allContacts: [], chats: [], messages: [], activeTab: "chats", selectedUser: null,
-  isUsersLoading: false, isMessagesLoading: false, isTyping: false,
-  isSoundEnabled: JSON.parse(localStorage.getItem("isSoundEnabled")) === true,
+const sortChats = (chats) =>
+  [...chats].sort((a, b) => {
+    const aPinned = Number(a.pinOrder ?? Infinity);
+    const bPinned = Number(b.pinOrder ?? Infinity);
+    if (aPinned !== bPinned) return aPinned - bPinned;
+    return new Date(b.lastMessage?.createdAt || 0) - new Date(a.lastMessage?.createdAt || 0);
+  });
 
-  toggleSound: () => {
-    localStorage.setItem("isSoundEnabled", !get().isSoundEnabled);
-    set({ isSoundEnabled: !get().isSoundEnabled });
-  },
+export const useChatStore = create((set, get) => ({
+  allContacts: [],
+  chats: [],
+  messages: [],
+  activeTab: "chats",
+  selectedUser: null,
+  isUsersLoading: false,
+  isMessagesLoading: false,
+  isTyping: false,
+  searchTerm: "",
+  archivedChatIds: JSON.parse(localStorage.getItem("archivedChatIds") || "[]"),
+  pinnedChatIds: JSON.parse(localStorage.getItem("pinnedChatIds") || "[]"),
+  soundSettings: JSON.parse(localStorage.getItem("soundSettings") || '{"receive":true,"send":true}'),
+
+  setSearchTerm: (value) => set({ searchTerm: value }),
+
   setActiveTab: (tab) => set({ activeTab: tab }),
-  setSelectedUser: (user) => set({ selectedUser: user }),
+  setSelectedUser: (user) => {
+    if (!user?._id) return set({ selectedUser: user });
+    set({
+      selectedUser: user,
+      chats: get().chats.map((chat) => (chat._id === user._id ? { ...chat, unreadCount: 0 } : chat)),
+    });
+  },
+
+  toggleArchiveChat: (chatId) => {
+    const archived = new Set(get().archivedChatIds);
+    if (archived.has(chatId)) archived.delete(chatId);
+    else archived.add(chatId);
+    const archivedChatIds = [...archived];
+    localStorage.setItem("archivedChatIds", JSON.stringify(archivedChatIds));
+    set({ archivedChatIds });
+  },
+
+  togglePinChat: (chatId) => {
+    const pinned = [...get().pinnedChatIds];
+    const index = pinned.indexOf(chatId);
+
+    if (index >= 0) {
+      pinned.splice(index, 1);
+    } else {
+      if (pinned.length >= 3) {
+        toast.error("You can pin up to 3 chats");
+        return;
+      }
+      pinned.push(chatId);
+    }
+
+    localStorage.setItem("pinnedChatIds", JSON.stringify(pinned));
+    set({
+      pinnedChatIds: pinned,
+      chats: sortChats(
+        get().chats.map((chat) => ({
+          ...chat,
+          pinOrder: pinned.indexOf(chat._id) >= 0 ? pinned.indexOf(chat._id) : null,
+        })),
+      ),
+    });
+  },
+
+  setSoundSetting: (type) => {
+    const current = get().soundSettings;
+    const soundSettings = { ...current, [type]: !current[type] };
+    localStorage.setItem("soundSettings", JSON.stringify(soundSettings));
+    set({ soundSettings });
+  },
 
   emitTypingEvent: () => {
     const socket = useAuthStore.getState().socket;
@@ -38,7 +117,18 @@ export const useChatStore = create((set, get) => ({
 
   getChats: async () => {
     set({ isUsersLoading: true });
-    try { const res = await api.get('/message/chats'); set({ chats: res.data.chatPartners }); }
+    try {
+      const res = await api.get('/message/chats');
+      const archived = new Set(get().archivedChatIds);
+      const pinned = get().pinnedChatIds;
+      const chats = res.data.chatPartners.map((chat) => ({
+        ...chat,
+        unreadCount: Number(chat.unreadCount || 0),
+        isArchived: archived.has(chat._id),
+        pinOrder: pinned.indexOf(chat._id) >= 0 ? pinned.indexOf(chat._id) : null,
+      }));
+      set({ chats: sortChats(chats) });
+    }
     finally { set({ isUsersLoading: false }); }
   },
 
@@ -46,7 +136,7 @@ export const useChatStore = create((set, get) => ({
     set({ isMessagesLoading: true });
     try {
       const res = await api.get(`/message/${userId}`);
-      set({ messages: res.data.messages });
+      set({ messages: res.data.messages, chats: get().chats.map((chat) => (chat._id === userId ? { ...chat, unreadCount: 0 } : chat)) });
       await api.patch(`/message/read/${userId}`);
       useAuthStore.getState().socket?.emit('chat:opened', { chatUserId: userId });
     } finally { set({ isMessagesLoading: false }); }
@@ -78,18 +168,28 @@ export const useChatStore = create((set, get) => ({
 
     socket.on('newMessage', (message) => {
       const selectedUser = get().selectedUser;
+      const myId = useAuthStore.getState().authUser?._id;
       if (selectedUser && (message.senderId === selectedUser._id || message.receiverId === selectedUser._id)) {
         set({ messages: [...get().messages, message] });
       }
       set({ chats: updateChatWithLastMessage(get().chats, message) });
+
+      if (message.receiverId === myId && get().soundSettings.receive) {
+        const receiveSound = new Audio('/sounds/mouse-click.mp3');
+        receiveSound.play().catch(() => {});
+      }
     });
 
     socket.on('chat:last-message', (message) => set({ chats: updateChatWithLastMessage(get().chats, message) }));
 
-    socket.on('messages:read', ({ messageIds, readerId }) => {
+    socket.on('messages:read', ({ messageIds, readerId, chatUserId }) => {
       set({
         messages: get().messages.map((msg) => messageIds.includes(msg._id) ? { ...msg, readBy: [...new Set([...(msg.readBy || []), readerId])] } : msg),
-        chats: get().chats.map((chat) => !chat.lastMessage || !messageIds.includes(chat.lastMessage._id) ? chat : ({ ...chat, lastMessage: { ...chat.lastMessage, readBy: [...new Set([...(chat.lastMessage.readBy || []), readerId])] } })),
+        chats: get().chats.map((chat) => {
+          if (chat._id === chatUserId) return { ...chat, unreadCount: 0 };
+          if (!chat.lastMessage || !messageIds.includes(chat.lastMessage._id)) return chat;
+          return { ...chat, lastMessage: { ...chat.lastMessage, readBy: [...new Set([...(chat.lastMessage.readBy || []), readerId])] } };
+        }),
       });
     });
 
