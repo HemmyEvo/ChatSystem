@@ -44,14 +44,13 @@ const formatDateDivider = (dateString) => {
   return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
-// NEW: Beautiful pulsating skeleton that mimics the chat bubbles
 const MessageSkeleton = () => {
   const skeletonMessages = [
     { id: 1, isOwn: false, width: 'w-48', height: 'h-10' },
     { id: 2, isOwn: true, width: 'w-64', height: 'h-10' },
     { id: 3, isOwn: false, width: 'w-56', height: 'h-14' },
     { id: 4, isOwn: true, width: 'w-40', height: 'h-10' },
-    { id: 5, isOwn: false, width: 'w-72', height: 'h-24' }, // Mimics a media message
+    { id: 5, isOwn: false, width: 'w-72', height: 'h-24' },
     { id: 6, isOwn: true, width: 'w-32', height: 'h-10' },
   ];
 
@@ -180,7 +179,8 @@ const MessageBubble = ({
   setLightboxMedia,
   selectedUser,
   chatBubbleColors,
-  selectedMessages
+  selectedMessages,
+  onlineUsers // NEW
 }) => {
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -238,6 +238,10 @@ const MessageBubble = ({
       setSwipeOffset(0);
     }
   };
+
+  // Determine read/delivery status for this specific message
+  const isRead = (message.readBy || []).includes(selectedUser?._id);
+  const isDelivered = (message.deliveredTo || []).includes(selectedUser?._id) || isRead || onlineUsers.includes(selectedUser?._id);
 
   return (
     <div
@@ -307,7 +311,15 @@ const MessageBubble = ({
 
             <div className={`flex items-center gap-1 text-[11px] opacity-70 mt-1 ${isOwnMessage ? 'justify-end' : 'justify-end'}`}>
               <span>{formatTime(message.createdAt)}</span>
-              {isOwnMessage && ((message.readBy || []).includes(selectedUser?._id) ? <CheckCheck size={14} className='text-[#53bdeb]' /> : <Check size={14} />)}
+              
+              {/* UPDATED: Accurate Read/Delivered Ticks */}
+              {isOwnMessage && (
+                isRead 
+                  ? <CheckCheck size={14} className='text-[#53bdeb]' /> 
+                  : isDelivered
+                    ? <CheckCheck size={14} className='text-slate-300' />
+                    : <Check size={14} className='text-slate-300' />
+              )}
             </div>
           </div>
 
@@ -345,7 +357,7 @@ const MessageBubble = ({
 };
 
 function ChatBody() {
-  const { authUser } = useAuthStore();
+  const { authUser, onlineUsers } = useAuthStore();
   const { 
     messages, selectedUser, subscribeToTypingEvents, unsubscribeFromTypingEvents, 
     isTyping, isMessagesLoading, toggleSelectedMessage, selectedMessages, 
@@ -370,7 +382,6 @@ function ChatBody() {
 
   useEffect(() => { subscribeToTypingEvents(); return () => unsubscribeFromTypingEvents(); }, [subscribeToTypingEvents, unsubscribeFromTypingEvents]);
 
-  // UPDATED: Uses the new MessageSkeleton component
   if (isMessagesLoading) return <MessageSkeleton />;
 
   return (
@@ -431,12 +442,21 @@ function ChatBody() {
                     selectedUser={selectedUser}
                     chatBubbleColors={chatBubbleColors}
                     selectedMessages={selectedMessages}
+                    onlineUsers={onlineUsers} // NEW
                   />
                 </React.Fragment>
               );
             })}
 
-            {isTyping && <div className='chat chat-start mb-4 px-4 md:px-8'><div className='chat-bubble bg-[#202c33] text-slate-200 w-16'>...</div></div>}
+            {/* UPDATED: DaisyUI dots typing indicator */}
+            {isTyping && (
+              <div className='chat chat-start mb-10 px-4 md:px-8'>
+                <div className='chat-bubble bg-[#202c33] text-slate-400 w-16 h-10 flex items-center justify-center'>
+                  <span className="loading loading-dots loading-sm"></span>
+                </div>
+              </div>
+            )}
+            
             <div ref={messagesEndRef} className="h-4" />
           </div>
         </div>

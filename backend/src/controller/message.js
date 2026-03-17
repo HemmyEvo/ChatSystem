@@ -222,14 +222,18 @@ export const messageController = {
     }
   },
 
-  markAsRead: async (req, res) => {
+ markAsRead: async (req, res) => {
     try {
       const myId = req.user._id;
       const { id: chatUserId } = req.params;
       const unreadMessages = await Message.find({ senderId: chatUserId, receiverId: myId, readBy: { $ne: myId }, deletedFor: { $ne: myId } }).select('_id');
 
       if (unreadMessages.length) {
-        await Message.updateMany({ _id: { $in: unreadMessages.map((m) => m._id) } }, { $addToSet: { readBy: myId }, $set: { readAt: new Date() } });
+        await Message.updateMany(
+          { _id: { $in: unreadMessages.map((m) => m._id) } }, 
+          // NEW: Ensure deliveredTo is also updated
+          { $addToSet: { readBy: myId, deliveredTo: myId }, $set: { readAt: new Date() } }
+        );
         const chatUserSocketId = getReceiverSocketId(chatUserId);
         if (chatUserSocketId) {
           io.to(chatUserSocketId).emit('messages:read', { readerId: myId.toString(), chatUserId, messageIds: unreadMessages.map((m) => m._id.toString()), readAt: new Date().toISOString() });

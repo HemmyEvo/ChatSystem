@@ -14,11 +14,23 @@ const sortChats = (chats) =>
 const updateChatWithLastMessage = (chats, message) => {
   const me = useAuthStore.getState().authUser?._id;
   const partnerId = message.senderId === me ? message.receiverId : message.senderId;
+  const selectedUserId = useChatStore.getState().selectedUser?._id;
+
+  const chatExists = chats.some(c => c._id === partnerId);
+  if (!chatExists) {
+    useChatStore.getState().getChats();
+    return chats;
+  }
+
   return sortChats(
     chats.map((chat) => {
       if (chat._id !== partnerId) return chat;
+      
       const currentUnread = Number(chat.unreadCount || 0);
-      const shouldIncreaseUnread = message.senderId === partnerId && !(message.readBy || []).includes(me);
+      const isCurrentlyOpen = selectedUserId === partnerId;
+      
+      const shouldIncreaseUnread = message.senderId === partnerId && !(message.readBy || []).includes(me) && !isCurrentlyOpen;
+      
       return { ...chat, lastMessage: message, unreadCount: shouldIncreaseUnread ? currentUnread + 1 : currentUnread };
     }),
   );
@@ -26,18 +38,20 @@ const updateChatWithLastMessage = (chats, message) => {
 
 export const useChatStore = create((set, get) => ({
   allContacts: [], chats: [], messages: [], activeTab: "chats", selectedUser: null,
-  isUsersLoading: false, isMessagesLoading: false, isTyping: false, searchTerm: "",
+  isUsersLoading: false, isMessagesLoading: false, searchTerm: "",
   selectedMessages: [], replyTarget: null,
+  
+  isTyping: false, 
+  typingUsers: {}, 
+
   archivedChatIds: JSON.parse(localStorage.getItem("archivedChatIds") || "[]"),
   pinnedChatIds: JSON.parse(localStorage.getItem("pinnedChatIds") || "[]"),
   soundSettings: JSON.parse(localStorage.getItem("soundSettings") || '{"receive":true,"send":true}'),
 
-  // Customization State
   chatBackground: localStorage.getItem("chatBackground") || null,
   chatBgOpacity: Number(localStorage.getItem("chatBgOpacity")) || 0.4,
   chatBubbleColors: JSON.parse(localStorage.getItem("chatBubbleColors") || '{"own": "#005c4b", "other": "#202c33"}'),
 
-  // Customization Actions
   setChatBackground: (imageUrl) => {
     try {
       if (imageUrl) {
@@ -47,7 +61,7 @@ export const useChatStore = create((set, get) => ({
       }
       set({ chatBackground: imageUrl });
     } catch (error) {
-    console.error("Error saving chat background:", error);
+      console.error("Error saving chat background:", error);
       toast.error("Failed to save background. File might be too large.");
     }
   },
@@ -61,13 +75,11 @@ export const useChatStore = create((set, get) => ({
     localStorage.setItem("chatBubbleColors", JSON.stringify(colors));
     set({ chatBubbleColors: colors });
   },
+  
   setSoundSetting: (type) => {
     const currentSettings = get().soundSettings;
     const newSettings = { ...currentSettings, [type]: !currentSettings[type] };
-    
-    // Save to local storage so it remembers when they refresh
     localStorage.setItem("soundSettings", JSON.stringify(newSettings));
-    
     set({ soundSettings: newSettings });
   },
 
@@ -76,25 +88,21 @@ export const useChatStore = create((set, get) => ({
   setReplyTarget: (msg) => set({ replyTarget: msg }),
   clearSelectedMessages: () => set({ selectedMessages: [] }),
   toggleSelectedMessage: (msgId) => set({ selectedMessages: get().selectedMessages.includes(msgId) ? get().selectedMessages.filter((id) => id !== msgId) : [...get().selectedMessages, msgId] }),
+  
   toggleArchiveChat: (chatId) => {
     const current = get().archivedChatIds;
-    const updated = current.includes(chatId) 
-      ? current.filter(id => id !== chatId) 
-      : [...current, chatId];
-    
+    const updated = current.includes(chatId) ? current.filter(id => id !== chatId) : [...current, chatId];
     localStorage.setItem("archivedChatIds", JSON.stringify(updated));
     set({ archivedChatIds: updated });
   },
 
   togglePinChat: (chatId) => {
     const current = get().pinnedChatIds;
-    const updated = current.includes(chatId) 
-      ? current.filter(id => id !== chatId) 
-      : [...current, chatId];
-      
+    const updated = current.includes(chatId) ? current.filter(id => id !== chatId) : [...current, chatId];
     localStorage.setItem("pinnedChatIds", JSON.stringify(updated));
     set({ pinnedChatIds: updated });
   },
+  
   setSelectedUser: (user) => {
     if (!user?._id) return set({ selectedUser: user, selectedMessages: [], replyTarget: null });
     set({ selectedUser: user, selectedMessages: [], replyTarget: null, chats: get().chats.map((chat) => (chat._id === user._id ? { ...chat, unreadCount: 0 } : chat)) });
@@ -138,7 +146,7 @@ export const useChatStore = create((set, get) => ({
     const me = useAuthStore.getState().authUser;
     const payload = { ...messageData, ...(replyTarget ? { replyTo: replyTarget._id } : {}) };
     const tempId = `temp-${Date.now()}`;
-    const optimisticMessage = { _id: tempId, senderId: me._id, receiverId: selectedUser._id, ...payload, createdAt: new Date().toISOString(), readBy: [me._id], isOptimistic: true };
+    const optimisticMessage = { _id: tempId, senderId: me._id, receiverId: selectedUser._id, ...payload, createdAt: new Date().toISOString(), readBy: [me._id], deliveredTo: [], isOptimistic: true };
     set({ messages: [...messages, optimisticMessage], chats: updateChatWithLastMessage(get().chats, optimisticMessage), replyTarget: null });
     try {
       const res = await api.post(`/message/send/${selectedUser._id}`, payload);
@@ -172,22 +180,54 @@ export const useChatStore = create((set, get) => ({
 
   subscribeToTypingEvents: () => {
     const socket = useAuthStore.getState().socket; if (!socket) return;
-    socket.on('typing', ({ senderId }) => { if (get().selectedUser?._id === senderId) { set({ isTyping: true }); setTimeout(() => set({ isTyping: false }), 3000); } });
+    socket.off('typing'); 
+    
+    socket.on('typing', ({ senderId }) => { 
+      set((state) => ({ typingUsers: { ...state.typingUsers, [senderId]: true } }));
+      if (get().selectedUser?._id === senderId) set({ isTyping: true }); 
+      
+      setTimeout(() => { 
+        set((state) => ({ typingUsers: { ...state.typingUsers, [senderId]: false } }));
+        if (get().selectedUser?._id === senderId) set({ isTyping: false }); 
+      }, 3000); 
+    });
   },
+  
   unsubscribeFromTypingEvents: () => useAuthStore.getState().socket?.off('typing'),
 
   subscribeToNewMessages: () => {
     const socket = useAuthStore.getState().socket;
     if (!socket) return;
 
-    socket.on('newMessage', (message) => {
+    socket.off('newMessage'); 
+    socket.off('message:reaction-updated');
+    socket.off('messages:read');
+    socket.off('messages:delivered'); // NEW
+
+    socket.on('newMessage', async (message) => {
       const selectedUser = get().selectedUser;
       const myId = useAuthStore.getState().authUser?._id;
-      if (selectedUser && (message.senderId === selectedUser._id || message.receiverId === selectedUser._id)) {
+      
+      const isChatOpen = selectedUser && message.senderId === selectedUser._id;
+
+      if (isChatOpen) {
+        const readMessage = { ...message, readBy: [...new Set([...(message.readBy || []), myId])] };
+        set({ messages: [...get().messages, readMessage] });
+
+        try {
+          await api.patch(`/message/read/${selectedUser._id}`);
+        } catch (error) {
+          console.error("Failed to mark as read", error);
+        }
+      } else if (selectedUser && message.receiverId === selectedUser._id) {
         set({ messages: [...get().messages, message] });
       }
+      
       set({ chats: updateChatWithLastMessage(get().chats, message) });
-      if (message.receiverId === myId && get().soundSettings.receive) new Audio('/sounds/notification.mp3').play().catch(() => {});
+      
+      if (message.receiverId === myId && get().soundSettings.receive && !isChatOpen) {
+        new Audio('/sounds/notification.mp3').play().catch(() => {});
+      }
     });
 
     socket.on('message:reaction-updated', ({ messageId, reactions }) => {
@@ -200,11 +240,25 @@ export const useChatStore = create((set, get) => ({
         chats: get().chats.map((chat) => chat._id === chatUserId ? { ...chat, unreadCount: 0 } : chat),
       });
     });
+
+    // NEW: Handle real-time delivery status updates
+    socket.on('messages:delivered', ({ receiverId, messageIds }) => {
+      set({
+        messages: get().messages.map((msg) => 
+          messageIds.includes(msg._id) 
+            ? { ...msg, deliveredTo: [...new Set([...(msg.deliveredTo || []), receiverId])] } 
+            : msg
+        )
+      });
+    });
   },
 
   unsubscribeFromNewMessages: () => {
     const socket = useAuthStore.getState().socket;
-    socket?.off('newMessage'); socket?.off('message:reaction-updated'); socket?.off('messages:read');
+    socket?.off('newMessage'); 
+    socket?.off('message:reaction-updated'); 
+    socket?.off('messages:read');
+    socket?.off('messages:delivered');
   },
 
   blockUser: async (userId) => { await api.post(`/message/block/${userId}`); toast.success('User blocked'); },

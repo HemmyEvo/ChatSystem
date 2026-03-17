@@ -18,6 +18,10 @@ const messageSchema = new mongoose.Schema(
       },
     ],
     deletedFor: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    
+    // NEW: Track delivery separately from read status
+    deliveredTo: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    
     readBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     readAt: { type: Date },
   },
@@ -27,6 +31,10 @@ const messageSchema = new mongoose.Schema(
 messageSchema.pre('save', function markSenderAsReader(next) {
   if (!this.readBy || this.readBy.length === 0) {
     this.readBy = [this.senderId];
+  }
+  // NEW: Also mark the sender as having the message delivered
+  if (!this.deliveredTo || this.deliveredTo.length === 0) {
+    this.deliveredTo = [this.senderId];
   }
   next();
 });

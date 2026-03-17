@@ -35,6 +35,9 @@ function ChatsList() {
     toggleArchiveChat,
     togglePinChat,
     pinnedChatIds,
+    typingUsers, // Extracted real-time typing dictionary
+    subscribeToNewMessages, // Extracted socket listener
+    subscribeToTypingEvents
   } = useChatStore();
   
   const { onlineUsers, authUser } = useAuthStore();
@@ -42,7 +45,6 @@ function ChatsList() {
 
   const filteredChats = chats.filter((chat) => chat.fullname.toLowerCase().includes(searchTerm.toLowerCase()));
   
-  // FIXED: Added sorting logic so Pinned chats jump to the top
   const visibleChats = filteredChats
     .filter((chat) => !archivedChatIds.includes(chat._id))
     .sort((a, b) => {
@@ -50,14 +52,17 @@ function ChatsList() {
       const bPinned = pinnedChatIds.includes(b._id);
       if (aPinned && !bPinned) return -1;
       if (!aPinned && bPinned) return 1;
-      return 0; // Maintain recent message sorting for the rest
+      return 0;
     });
 
   const archivedChats = filteredChats.filter((chat) => archivedChatIds.includes(chat._id));
 
+  // FIXED: Attach Realtime Listeners on Chat List mount so unread count updates perfectly
   useEffect(() => {
     getChats();
-  }, [getChats]);
+    subscribeToNewMessages();
+    subscribeToTypingEvents();
+  }, [getChats, subscribeToNewMessages, subscribeToTypingEvents]);
 
   if (isUsersLoading) return <UsersLoadingSkeleton />;
   if (chats.length === 0) return <NoChatsFound />;
@@ -67,6 +72,7 @@ function ChatsList() {
     const lastMessage = chat.lastMessage;
     const isMyLastMessage = lastMessage?.senderId === authUser?._id;
     const isRead = isMyLastMessage && (lastMessage?.readBy || []).includes(chat._id);
+    const isUserTyping = typingUsers[chat._id]; // Check if this specific user is typing
 
     return (
       <div
@@ -92,17 +98,22 @@ function ChatsList() {
 
             <div className="flex items-center justify-between gap-2 mt-1">
               <p className="text-slate-400 text-sm truncate flex items-center gap-1">
-                {isMyLastMessage ? (
-                  isRead ? <CheckCheck size={14} className="text-sky-400" /> : <Check size={14} className="text-slate-400" />
-                ) : isOnline ? (
-                  <span className="text-[11px] text-emerald-400">online</span>
-                ) : null}
-                {getLastMessageIcon(lastMessage)}
-                {getLastMessagePreview(lastMessage)}
+                {/* DYNAMIC RENDER: Is Typing vs Standard Message Preview */}
+                {isUserTyping ? (
+                  <span className="text-emerald-400 italic font-medium">{chat.fullname.split(' ')[0]} is typing...</span>
+                ) : (
+                  <>
+                    {isMyLastMessage ? (
+                      isRead ? <CheckCheck size={14} className="text-sky-400" /> : <Check size={14} className="text-slate-400" />
+                    ) :  null}
+                    {getLastMessageIcon(lastMessage)}
+                    {getLastMessagePreview(lastMessage)}
+                  </>
+                )}
               </p>
 
               <div className="flex items-center gap-2 shrink-0">
-                {chat.unreadCount > 0 && (
+                {chat.unreadCount > 0 && !isUserTyping && (
                   <span className="min-w-5 h-5 px-1 rounded-full bg-emerald-500 text-[10px] text-white grid place-items-center font-semibold">
                     {chat.unreadCount > 99 ? "99+" : chat.unreadCount}
                   </span>
