@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { Check, CheckCheck, Mic, Image as ImageIcon, Video, Archive, ArchiveRestore, Pin, Search } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Check, CheckCheck, Mic, Image as ImageIcon, Video, Archive, ArchiveRestore, Pin, Search, ArrowLeft } from "lucide-react";
 import { useChatStore } from "../store/useChatStore";
 import UsersLoadingSkeleton from "./UsersLoadingSkeleton";
 import NoChatsFound from "./NoChatsFound";
@@ -36,7 +36,24 @@ function ChatsList() {
     togglePinChat,
     pinnedChatIds,
   } = useChatStore();
+  
   const { onlineUsers, authUser } = useAuthStore();
+  const [showArchivedView, setShowArchivedView] = useState(false);
+
+  const filteredChats = chats.filter((chat) => chat.fullname.toLowerCase().includes(searchTerm.toLowerCase()));
+  
+  // FIXED: Added sorting logic so Pinned chats jump to the top
+  const visibleChats = filteredChats
+    .filter((chat) => !archivedChatIds.includes(chat._id))
+    .sort((a, b) => {
+      const aPinned = pinnedChatIds.includes(a._id);
+      const bPinned = pinnedChatIds.includes(b._id);
+      if (aPinned && !bPinned) return -1;
+      if (!aPinned && bPinned) return 1;
+      return 0; // Maintain recent message sorting for the rest
+    });
+
+  const archivedChats = filteredChats.filter((chat) => archivedChatIds.includes(chat._id));
 
   useEffect(() => {
     getChats();
@@ -44,10 +61,6 @@ function ChatsList() {
 
   if (isUsersLoading) return <UsersLoadingSkeleton />;
   if (chats.length === 0) return <NoChatsFound />;
-
-  const filteredChats = chats.filter((chat) => chat.fullname.toLowerCase().includes(searchTerm.toLowerCase()));
-  const visibleChats = filteredChats.filter((chat) => !archivedChatIds.includes(chat._id));
-  const archivedChats = filteredChats.filter((chat) => archivedChatIds.includes(chat._id));
 
   const renderRow = (chat) => {
     const isOnline = onlineUsers.includes(chat._id);
@@ -113,6 +126,10 @@ function ChatsList() {
                   onClick={(e) => {
                     e.stopPropagation();
                     toggleArchiveChat(chat._id);
+                    
+                    if (showArchivedView && archivedChats.length === 1 && archivedChatIds.includes(chat._id)) {
+                      setShowArchivedView(false);
+                    }
                   }}
                   title="Archive chat"
                 >
@@ -128,23 +145,50 @@ function ChatsList() {
 
   return (
     <div className="space-y-3">
-      <div className="relative">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-        <input
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Search or start new chat"
-          className="w-full bg-slate-700/70 text-slate-200 pl-9 pr-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500"
-        />
-      </div>
-
-      <div className="space-y-1">{visibleChats.map(renderRow)}</div>
-
-      {archivedChats.length > 0 && (
-        <div className="pt-2 border-t border-slate-700/60">
-          <p className="text-xs uppercase text-slate-500 tracking-wider mb-1">Archived</p>
-          <div className="space-y-1">{archivedChats.map(renderRow)}</div>
+      {showArchivedView ? (
+        <div className="flex flex-col h-full animate-in slide-in-from-right-2 duration-200">
+          <div className="flex items-center gap-3 p-2 mb-2 text-slate-200 border-b border-slate-700/60 pb-3">
+            <button 
+              onClick={() => setShowArchivedView(false)} 
+              className="p-2 hover:bg-slate-700 rounded-full transition-colors"
+            >
+              <ArrowLeft size={20} />
+            </button>
+            <h3 className="font-semibold text-lg">Archived</h3>
+          </div>
+          <div className="space-y-1 overflow-y-auto">
+            {archivedChats.map(renderRow)}
+          </div>
         </div>
+      ) : (
+        <>
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search or start new chat"
+              className="w-full bg-slate-700/70 text-slate-200 pl-9 pr-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500"
+            />
+          </div>
+
+          <div className="space-y-1">
+            {archivedChats.length > 0 && (
+              <div
+                onClick={() => setShowArchivedView(true)}
+                className="flex items-center gap-4 p-3 rounded-xl cursor-pointer hover:bg-slate-700/60 transition-colors border border-transparent mb-1"
+              >
+                <div className="size-10 rounded-full bg-slate-800 flex items-center justify-center">
+                  <Archive size={18} className="text-emerald-500" />
+                </div>
+                <div className="flex-1 font-medium text-slate-200">Archived</div>
+                <span className="text-xs text-emerald-500 font-medium">{archivedChats.length}</span>
+              </div>
+            )}
+            
+            {visibleChats.map(renderRow)}
+          </div>
+        </>
       )}
     </div>
   );

@@ -3,7 +3,9 @@ import { Settings, LogOutIcon, Volume2Icon, VolumeOffIcon, ChevronDown } from "l
 import { useAuthStore } from "../store/useAuthStore";
 import { useChatStore } from "../store/useChatStore";
 
-const mouseClickSound = new Audio("/sounds/mouse-click.mp3");
+// 1. Initialize both specific sounds for the previews
+const receiveSoundPreview = new Audio("/sounds/notification.mp3");
+const sendSoundPreview = new Audio("/sounds/send.mp3");
 
 function ProfileHeader() {
   const { logout, authUser, updateProfile } = useAuthStore();
@@ -17,19 +19,30 @@ function ProfileHeader() {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.readAsDataURL(file);
-
+    
+    // Define onloadend BEFORE reading the file (Best Practice)
     reader.onloadend = async () => {
       const base64Image = reader.result;
       setSelectedImg(base64Image);
-      await updateProfile({ profilePic: base64Image });
+      // Note: Ensure your backend expects 'profilePic' or 'profilePicture'
+      await updateProfile({ profilePic: base64Image }); 
     };
+    
+    reader.readAsDataURL(file);
   };
 
   const toggleSound = (type) => {
-    mouseClickSound.currentTime = 0;
-    mouseClickSound.play().catch(() => {});
+    // 1. Update the store state
     setSoundSetting(type);
+
+
+    const isTurningOn = !soundSettings[type];
+    
+    if (isTurningOn) {
+      const audioToPlay = type === "send" ? sendSoundPreview : receiveSoundPreview;
+      audioToPlay.currentTime = 0;
+      audioToPlay.play().catch((e) => console.log("Audio play failed:", e));
+    }
   };
 
   return (
@@ -61,7 +74,7 @@ function ProfileHeader() {
           </div>
 
           <div>
-            <h3 className="text-slate-200 font-medium text-base max-w-[180px] truncate">{authUser?.data?.fullname}</h3>
+            <h3 className="text-slate-200 font-medium text-base max-w-[180px] truncate">{authUser?.fullname}</h3>
             <p className="text-slate-400 text-xs">Online</p>
           </div>
         </div>
@@ -78,7 +91,7 @@ function ProfileHeader() {
           {openMenu && (
             <div className="absolute right-0 mt-2 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-xl p-2 z-20">
               <button
-                className="w-full flex items-center justify-between px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 rounded"
+                className="w-full flex items-center justify-between px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 rounded transition-colors"
                 onClick={() => toggleSound("receive")}
               >
                 Receive sound
@@ -86,7 +99,7 @@ function ProfileHeader() {
               </button>
 
               <button
-                className="w-full flex items-center justify-between px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 rounded"
+                className="w-full flex items-center justify-between px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 rounded transition-colors"
                 onClick={() => toggleSound("send")}
               >
                 Send sound
@@ -94,7 +107,7 @@ function ProfileHeader() {
               </button>
 
               <button
-                className="w-full flex items-center justify-between px-3 py-2 text-sm text-rose-300 hover:bg-slate-700 rounded"
+                className="w-full flex items-center justify-between px-3 py-2 text-sm text-rose-300 hover:bg-slate-700 rounded transition-colors mt-1 border-t border-slate-700/50 pt-2"
                 onClick={logout}
               >
                 Logout
@@ -107,4 +120,5 @@ function ProfileHeader() {
     </div>
   );
 }
+
 export default ProfileHeader;

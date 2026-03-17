@@ -13,7 +13,6 @@ function ChatFooter() {
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
   
-  
   const [previewMedia, setPreviewMedia] = useState(null); 
   const [isRecording, setIsRecording] = useState(false);
   const [audioBlob, setAudioBlob] = useState(null);
@@ -25,11 +24,10 @@ function ChatFooter() {
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const timerRef = useRef(null);
+  const textareaRef = useRef(null);
 
-  // Pull isSoundEnabled from the store
   const { allContacts, getAllContacts, isUsersLoading,emitTypingEvent, sendMessage, soundSettings, replyTarget, setReplyTarget } = useChatStore();
 
-  // Helper to play sounds safely
   const playSound = (audio) => {
     if (soundSettings.send) {
       audio.currentTime = 0;
@@ -75,7 +73,6 @@ function ChatFooter() {
         stream.getTracks().forEach(track => track.stop());
       };
 
-      // Play start sound
       playSound(recordStartSound);
 
       mediaRecorder.start();
@@ -123,13 +120,27 @@ function ChatFooter() {
       if (audioBlob) {
         payload.audio = await convertToBase64(audioBlob);
       }
+      
       setText("");
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
       setPreviewMedia(null);
       discardAudio();
       playSound(messageSendSound);
       await sendMessage(payload);    
     } catch (error) {
       console.error("Error sending message:", error);
+    }
+  };
+
+  const handleTextChange = (e) => {
+    emitTypingEvent();
+    setText(e.target.value);
+    
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'; 
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
     }
   };
 
@@ -150,14 +161,13 @@ function ChatFooter() {
 
   const handleShareContact = async (contact) => {
       await sendMessage({ sharedContactId: contact._id });
-      playSound(messageSendSound); // Play sound here too
+      playSound(messageSendSound);
       setShowContactModal(false);
       setShowAttachMenu(false);
-
   };
 
   return (
-    <div className='bg-slate-800 p-4 relative'>
+    <div className='bg-slate-800 p-3 sm:p-4 relative w-full box-border'>
       {/* --- MEDIA PREVIEW MODAL --- */}
       {previewMedia && (
         <div className="absolute bottom-full left-0 w-full bg-slate-800 border-t border-slate-700 p-4 shadow-lg z-40 flex flex-col gap-4">
@@ -175,63 +185,84 @@ function ChatFooter() {
         </div>
       )}
 
-
+      {/* --- REPLY PREVIEW --- */}
+      {/* STRICT FIX: Added flexbox boundaries and inline text-wrapping rules to kill the stretch */}
       {replyTarget && (
-        <div className='mb-2 bg-slate-700/70 border-l-4 border-emerald-400 rounded-md px-3 py-2 text-sm text-slate-200 flex items-start justify-between'>
-          <div>
-            <p className='text-emerald-300 text-xs mb-1'>Replying to message</p>
-            <p className='line-clamp-1'>{replyTarget.text || 'Media message'}</p>
+        <div className='mb-2 w-full flex items-start justify-between bg-slate-700/70 border-l-4 border-emerald-400 rounded-md px-3 py-2 box-border overflow-hidden'>
+          <div className='flex-1 min-w-0 flex flex-col pr-2'>
+            <span className='text-emerald-300 text-xs mb-1 font-semibold truncate'>Replying to message</span>
+            <span 
+              className='text-slate-200 text-[13px] opacity-90 line-clamp-3 break-words'
+              style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
+            >
+              {replyTarget.text || 'Media message'}
+            </span>
           </div>
-          <button onClick={() => setReplyTarget(null)} type='button'><X size={16} /></button>
+          <button 
+            onClick={() => setReplyTarget(null)} 
+            type='button' 
+            className='flex-shrink-0 mt-0.5 p-1 hover:bg-slate-600 rounded-full transition-colors'
+          >
+            <X size={16} />
+          </button>
         </div>
       )}
 
       {/* --- MAIN INPUT ROW --- */}
-      <form onSubmit={handleSendMessage} className='flex items-center gap-2'>
-        <div className='relative'>
-          <button type="button" disabled={isRecording ||  audioBlob} onClick={() => setShowAttachMenu(!showAttachMenu)} className='p-2 text-slate-400 hover:text-white transition-colors rounded-full hover:bg-slate-700 disabled:opacity-50'>
+      <form onSubmit={handleSendMessage} className='flex items-end gap-2 w-full box-border'>
+        <div className='relative pb-[6px] flex-shrink-0'>
+          <button type="button" disabled={isRecording || audioBlob} onClick={() => setShowAttachMenu(!showAttachMenu)} className='p-2 text-slate-400 hover:text-white transition-colors rounded-full hover:bg-slate-700 disabled:opacity-50'>
             <Paperclip size={20} />
           </button>
-          {showAttachMenu && (
-            <div className='absolute bottom-12 left-0 bg-slate-700 rounded-lg shadow-xl p-2 flex flex-col gap-2 w-48 z-50'>
-              <button type="button" onClick={() => fileInputRef.current?.click()} className='flex items-center gap-3 p-2 hover:bg-slate-600 rounded text-left text-sm text-slate-200'><ImageIcon size={18} className="text-blue-400" /> Image / Gallery</button>
-              <button type="button" onClick={() => videoInputRef.current?.click()} className='flex items-center gap-3 p-2 hover:bg-slate-600 rounded text-left text-sm text-slate-200'><Video size={18} className="text-pink-400" /> Video</button>
-              <button type="button" onClick={() => setShowContactModal(true)} className='flex items-center gap-3 p-2 hover:bg-slate-600 rounded text-left text-sm text-slate-200'><User size={18} className="text-green-400" /> Share Contact</button>
-            </div>
-          )}
+          
+          {/* Attach Menu */}
+          <div className={`absolute bottom-12 left-0 bg-slate-700 rounded-lg shadow-xl p-2 flex flex-col gap-2 w-48 z-50 transition-all duration-200 origin-bottom-left ${showAttachMenu ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'}`}>
+            <button type="button" onClick={() => fileInputRef.current?.click()} className='flex items-center gap-3 p-2 hover:bg-slate-600 rounded text-left text-sm text-slate-200'><ImageIcon size={18} className="text-blue-400" /> Image / Gallery</button>
+            <button type="button" onClick={() => videoInputRef.current?.click()} className='flex items-center gap-3 p-2 hover:bg-slate-600 rounded text-left text-sm text-slate-200'><Video size={18} className="text-pink-400" /> Video</button>
+            <button type="button" onClick={() => setShowContactModal(true)} className='flex items-center gap-3 p-2 hover:bg-slate-600 rounded text-left text-sm text-slate-200'><User size={18} className="text-green-400" /> Share Contact</button>
+          </div>
         </div>
 
         <input type="file" hidden ref={fileInputRef} accept="image/*" onChange={(e) => handleFileUpload(e, 'image')} />
         <input type="file" hidden ref={videoInputRef} accept="video/*" onChange={(e) => handleFileUpload(e, 'video')} />
 
         {isRecording ? (
-          <div className="flex-1 bg-red-500/10 text-red-500 rounded-full px-4 py-2 flex items-center justify-between border border-red-500/30">
+          <div className="flex-1 min-w-0 bg-red-500/10 text-red-500 rounded-full px-4 py-3 flex items-center justify-between border border-red-500/30 mb-[2px]">
             <div className="flex items-center gap-2 animate-pulse"><Mic size={16} /> Recording...</div>
             <span className="font-mono">{formatTime(recordingTime)}</span>
           </div>
         ) : audioBlob ? (
-          <div className="flex-1 bg-slate-700 rounded-full px-4 py-2 flex items-center gap-3">
+          <div className="flex-1 min-w-0 bg-slate-700 rounded-full px-4 py-2 flex items-center gap-3 mb-[2px]">
             <button type="button" onClick={discardAudio} className="text-slate-400 hover:text-red-400 disabled:opacity-50"><Trash2 size={18} /></button>
             <audio src={audioUrl} controls className="h-8 w-full invert grayscale opacity-80" />
           </div>
         ) : (
-          <input 
-            type="text" 
+          <textarea 
+            ref={textareaRef}
             value={text}
-            onChange={(e) => {emitTypingEvent(); setText(e.target.value)}}
-          
+            onChange={handleTextChange}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage(e);
+              }
+            }}
             placeholder={previewMedia ? "Add a caption..." : "Type a message..."} 
-            className='flex-1 bg-slate-700 text-white rounded-full px-4 py-2 focus:outline-none focus:ring-1 focus:ring-cyan-500 placeholder-slate-400 disabled:opacity-50'
+            rows={1}
+            className='flex-1 w-full min-w-0 bg-slate-700 text-white rounded-2xl px-4 py-2.5 focus:outline-none focus:ring-1 focus:ring-cyan-500 placeholder-slate-400 disabled:opacity-50 resize-none overflow-y-auto leading-relaxed scrollbar-thin scrollbar-thumb-slate-500 scrollbar-track-transparent'
+            style={{ minHeight: '44px' }}
           />
         )}
 
-        {isRecording ? (
-          <button type="button" onClick={stopRecording} className='p-3 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors'><Square size={18} /></button>
-        ) : text.trim() || previewMedia || audioBlob ? (
-          <button type="submit" className='p-3 bg-cyan-500 text-white rounded-full hover:bg-cyan-600 transition-colors'><Send size={18} className="ml-1" /></button>
-        ) : (
-          <button type="button" onClick={startRecording} className='p-3 bg-slate-700 text-slate-300 rounded-full hover:bg-slate-600 transition-colors'><Mic size={18} /></button>
-        )}
+        <div className="pb-[4px] flex-shrink-0">
+          {isRecording ? (
+            <button type="button" onClick={stopRecording} className='p-2.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors'><Square size={18} /></button>
+          ) : text.trim() || previewMedia || audioBlob ? (
+            <button type="submit" className='p-2.5 bg-cyan-500 text-white rounded-full hover:bg-cyan-600 transition-colors'><Send size={18} className="ml-1" /></button>
+          ) : (
+            <button type="button" onClick={startRecording} className='p-2.5 bg-slate-700 text-slate-300 rounded-full hover:bg-slate-600 transition-colors'><Mic size={18} /></button>
+          )}
+        </div>
       </form>
 
       {/* --- CONTACT SHARE MODAL --- */}

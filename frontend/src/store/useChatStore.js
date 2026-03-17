@@ -32,12 +32,69 @@ export const useChatStore = create((set, get) => ({
   pinnedChatIds: JSON.parse(localStorage.getItem("pinnedChatIds") || "[]"),
   soundSettings: JSON.parse(localStorage.getItem("soundSettings") || '{"receive":true,"send":true}'),
 
+  // Customization State
+  chatBackground: localStorage.getItem("chatBackground") || null,
+  chatBgOpacity: Number(localStorage.getItem("chatBgOpacity")) || 0.4,
+  chatBubbleColors: JSON.parse(localStorage.getItem("chatBubbleColors") || '{"own": "#005c4b", "other": "#202c33"}'),
+
+  // Customization Actions
+  setChatBackground: (imageUrl) => {
+    try {
+      if (imageUrl) {
+        localStorage.setItem("chatBackground", imageUrl);
+      } else {
+        localStorage.removeItem("chatBackground");
+      }
+      set({ chatBackground: imageUrl });
+    } catch (error) {
+    console.error("Error saving chat background:", error);
+      toast.error("Failed to save background. File might be too large.");
+    }
+  },
+
+  setChatBgOpacity: (opacity) => {
+    localStorage.setItem("chatBgOpacity", opacity);
+    set({ chatBgOpacity: opacity });
+  },
+
+  setChatBubbleColors: (colors) => {
+    localStorage.setItem("chatBubbleColors", JSON.stringify(colors));
+    set({ chatBubbleColors: colors });
+  },
+  setSoundSetting: (type) => {
+    const currentSettings = get().soundSettings;
+    const newSettings = { ...currentSettings, [type]: !currentSettings[type] };
+    
+    // Save to local storage so it remembers when they refresh
+    localStorage.setItem("soundSettings", JSON.stringify(newSettings));
+    
+    set({ soundSettings: newSettings });
+  },
+
   setSearchTerm: (value) => set({ searchTerm: value }),
   setActiveTab: (tab) => set({ activeTab: tab }),
   setReplyTarget: (msg) => set({ replyTarget: msg }),
   clearSelectedMessages: () => set({ selectedMessages: [] }),
   toggleSelectedMessage: (msgId) => set({ selectedMessages: get().selectedMessages.includes(msgId) ? get().selectedMessages.filter((id) => id !== msgId) : [...get().selectedMessages, msgId] }),
+  toggleArchiveChat: (chatId) => {
+    const current = get().archivedChatIds;
+    const updated = current.includes(chatId) 
+      ? current.filter(id => id !== chatId) 
+      : [...current, chatId];
+    
+    localStorage.setItem("archivedChatIds", JSON.stringify(updated));
+    set({ archivedChatIds: updated });
+  },
 
+  togglePinChat: (chatId) => {
+    const current = get().pinnedChatIds;
+    const updated = current.includes(chatId) 
+      ? current.filter(id => id !== chatId) 
+      : [...current, chatId];
+      
+    localStorage.setItem("pinnedChatIds", JSON.stringify(updated));
+    set({ pinnedChatIds: updated });
+  },
   setSelectedUser: (user) => {
     if (!user?._id) return set({ selectedUser: user, selectedMessages: [], replyTarget: null });
     set({ selectedUser: user, selectedMessages: [], replyTarget: null, chats: get().chats.map((chat) => (chat._id === user._id ? { ...chat, unreadCount: 0 } : chat)) });
@@ -130,7 +187,7 @@ export const useChatStore = create((set, get) => ({
         set({ messages: [...get().messages, message] });
       }
       set({ chats: updateChatWithLastMessage(get().chats, message) });
-      if (message.receiverId === myId && get().soundSettings.receive) new Audio('/sounds/mouse-click.mp3').play().catch(() => {});
+      if (message.receiverId === myId && get().soundSettings.receive) new Audio('/sounds/notification.mp3').play().catch(() => {});
     });
 
     socket.on('message:reaction-updated', ({ messageId, reactions }) => {
