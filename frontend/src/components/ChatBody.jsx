@@ -79,7 +79,7 @@ if (isMessagesLoading) {
       ) : (
         <div className='flex-1 p-4 md:p-10 bg-slate-900 overflow-y-auto relative' onClick={closeDropdown}>
           {messages.map((message) => {
-            const isOwnMessage = message.senderId === authUser?.data?._id;
+            const isOwnMessage = message.senderId === authUser?._id;
 
             return (
               // Added relative & group classes for hover logic, and touch events for mobile
@@ -164,7 +164,7 @@ if (isMessagesLoading) {
                   {message.text && (<span className="break-words leading-relaxed text-sm">{message.text}</span>)}
                 </div>
 
-                <div className="chat-footer opacity-50 text-xs mt-1">{formatTime(message.createdAt)}</div>
+                <div className="chat-footer opacity-50 text-xs mt-1">{formatTime(message.createdAt)} {isOwnMessage ? ((message.readBy || []).includes(selectedUser?._id) ? '✓✓' : '✓') : ''}</div>
               </div>
             );
           })}
