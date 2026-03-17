@@ -7,6 +7,10 @@ router.get('/contact', messageController.contact )
 router.get('/chats', messageController.chats )
 router.get('/:id', messageController.messageById );
 router.post("/send/:id", messageController.sendMessage ); 
+router.patch("/read/:id", messageController.markAsRead);
+router.post("/block/:id", messageController.blockUser);
+router.post("/unblock/:id", messageController.unblockUser);
+router.delete("/delete-chat/:id", messageController.deleteAllMessagesWithUser);
 router.delete("/delete/:id", messageController.deleteMessage); 
 
 export default router;
