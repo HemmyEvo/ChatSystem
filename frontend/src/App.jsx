@@ -40,12 +40,23 @@ function App() {
     };
   }, [socket]);
 
-
   useEffect(() => {
-    if (socket?.connected) {
+    if (!socket) return;
+
+    const bindGameEvents = () => {
       subscribeGameEvents();
+    };
+
+    if (socket.connected) {
+      bindGameEvents();
     }
+
+    socket.on('connect', bindGameEvents);
+    return () => {
+      socket.off('connect', bindGameEvents);
+    };
   }, [socket, subscribeGameEvents]);
+
   if (isCheckingAuth) return <PageLoader />;
 
   return (
