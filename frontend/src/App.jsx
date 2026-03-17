@@ -3,12 +3,14 @@ import ChatPage from './pages/ChatPage';
 import LoginPage from './pages/LoginPage';
 import SignUpPage from './pages/SignUpPage';
 import { useAuthStore } from './store/useAuthStore';
+import { useGameStore } from './store/useGameStore';
 import { useEffect } from 'react';
 import PageLoader from './components/PageLoader';
 import { Toaster } from 'react-hot-toast';
 
 function App() {
   const { checkAuth, isCheckingAuth, authUser, socket } = useAuthStore();
+  const { subscribeGameEvents } = useGameStore();
 
   useEffect(() => {
     checkAuth();
@@ -37,6 +39,23 @@ function App() {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [socket]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const bindGameEvents = () => {
+      subscribeGameEvents();
+    };
+
+    if (socket.connected) {
+      bindGameEvents();
+    }
+
+    socket.on('connect', bindGameEvents);
+    return () => {
+      socket.off('connect', bindGameEvents);
+    };
+  }, [socket, subscribeGameEvents]);
 
   if (isCheckingAuth) return <PageLoader />;
 

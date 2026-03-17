@@ -1,10 +1,11 @@
 import { Server } from 'socket.io';
-import http from "http";
+import http from 'http';
 import express from 'express';
 import dotenv from 'dotenv';
-import { socketAuthmiddleware } from './utlis.js'; // Ensure your path is correct
+import { socketAuthmiddleware } from './utlis.js';
 import User from '../models/User.js';
 import Message from '../models/Message.js';
+import { applyGameAction, clearInvite, createInvite, createSession, forfeitSession, getInvite, getPlayerState, getSession } from './gameEngine.js';
 
 dotenv.config();
 
@@ -20,13 +21,52 @@ const io = new Server(server, {
 
 io.use(socketAuthmiddleware);
 
-// Store active users (Key: userId string, Value: socket.id string)
-const userSocketMap = {}; 
+const userSocketMap = {};
 
 export function getReceiverSocketId(userId) {
-  // Ensure we are always looking up by string
   return userSocketMap[userId?.toString()];
 }
+
+const emitGameState = (session) => {
+  session.players.forEach((playerId) => {
+    const socketId = getReceiverSocketId(playerId);
+    if (!socketId) return;
+    io.to(socketId).emit('game:state', getPlayerState(session.id, playerId));
+  });
+};
+
+const updateGameStats = async (session) => {
+  if (!session?.state?.winnerId) return;
+  const loserId = session.players.find((id) => id !== session.state.winnerId);
+  await Promise.all([
+    User.findByIdAndUpdate(session.state.winnerId, {
+      $inc: {
+        [`gameStats.${session.gameType}.played`]: 1,
+        [`gameStats.${session.gameType}.won`]: 1,
+        'gameStats.totalPlayed': 1,
+        'gameStats.totalWon': 1,
+      },
+      $push: {
+        'gameStats.recentMatches': {
+          $each: [{ gameType: session.gameType, opponentId: loserId, winnerId: session.state.winnerId, playedAt: new Date() }],
+          $slice: -10,
+        },
+      },
+    }),
+    User.findByIdAndUpdate(loserId, {
+      $inc: {
+        [`gameStats.${session.gameType}.played`]: 1,
+        'gameStats.totalPlayed': 1,
+      },
+      $push: {
+        'gameStats.recentMatches': {
+          $each: [{ gameType: session.gameType, opponentId: session.state.winnerId, winnerId: session.state.winnerId, playedAt: new Date() }],
+          $slice: -10,
+        },
+      },
+    }),
+  ]);
+};
 
 export async function updateUserLastSeen(userId) {
   if (!userId) return;
@@ -37,93 +77,122 @@ function emitPresence() {
   io.emit('presence:update', { onlineUsers: Object.keys(userSocketMap) });
 }
 
-// NEW: Reusable function to instantly process deliveries
 async function processPendingDeliveries(userId) {
   if (!userId) return;
-  
+
   try {
-    // Find all messages sent to this user that they haven't marked as delivered yet
-    const undeliveredMessages = await Message.find({
-      receiverId: userId,
-      deliveredTo: { $ne: userId }
-    });
+    const undeliveredMessages = await Message.find({ receiverId: userId, deliveredTo: { $ne: userId } });
 
     if (undeliveredMessages.length > 0) {
-      // 1. Update database to mark them as delivered
-      await Message.updateMany(
-        { _id: { $in: undeliveredMessages.map(m => m._id) } },
-        { $addToSet: { deliveredTo: userId } }
-      );
+      await Message.updateMany({ _id: { $in: undeliveredMessages.map((m) => m._id) } }, { $addToSet: { deliveredTo: userId } });
 
-      // 2. Group the messages by sender so we can notify them
-      const sendersToNotify = [...new Set(undeliveredMessages.map(m => m.senderId.toString()))];
-      
-      sendersToNotify.forEach(senderId => {
+      const sendersToNotify = [...new Set(undeliveredMessages.map((m) => m.senderId.toString()))];
+      sendersToNotify.forEach((senderId) => {
         const senderSocket = getReceiverSocketId(senderId);
-        
-        // If the sender is online, shoot them the double gray ticks!
         if (senderSocket) {
-          const deliveredMsgIds = undeliveredMessages
-            .filter(m => m.senderId.toString() === senderId)
-            .map(m => m._id.toString());
-            
-          io.to(senderSocket).emit('messages:delivered', {
-            receiverId: userId.toString(),
-            messageIds: deliveredMsgIds
-          });
+          const deliveredMsgIds = undeliveredMessages.filter((m) => m.senderId.toString() === senderId).map((m) => m._id.toString());
+          io.to(senderSocket).emit('messages:delivered', { receiverId: userId.toString(), messageIds: deliveredMsgIds });
         }
       });
     }
   } catch (error) {
-    console.error("Error processing pending deliveries:", error);
+    console.error('Error processing pending deliveries:', error);
   }
 }
 
 io.on('connection', async (socket) => {
-  // FIX: Robustly grab the userId as a string, regardless of how middleware attaches it
   const userId = socket.user?._id?.toString() || socket.userId?.toString();
-  
+
   if (!userId) {
-    console.error("Socket connected but no userId found!");
+    console.error('Socket connected but no userId found!');
     return;
   }
 
-  // Register user as online
   userSocketMap[userId] = socket.id;
 
   await User.findByIdAndUpdate(userId, { lastSeen: new Date() });
   emitPresence();
   io.emit('user:last-seen', { userId, lastSeen: new Date().toISOString(), isOnline: true });
-
-  // --- TRIGGER DELIVERY CHECK ON CONNECTION ---
   await processPendingDeliveries(userId);
 
   socket.on('isTyping', ({ senderId, receiverId }) => {
     const receiverSocketId = getReceiverSocketId(receiverId);
-    if (receiverSocketId) {
-      io.to(receiverSocketId).emit('typing', { senderId });
+    if (receiverSocketId) io.to(receiverSocketId).emit('typing', { senderId });
+  });
+
+  socket.on('game:invite', ({ toUserId, gameType }) => {
+    if (!toUserId || !['whot', 'ludo'].includes(gameType)) return;
+    const receiverSocketId = getReceiverSocketId(toUserId);
+    if (!receiverSocketId) {
+      socket.emit('game:error', { message: 'User is offline. Invite failed.' });
+      return;
+    }
+    const invite = createInvite({ fromUserId: userId, toUserId, gameType });
+    io.to(receiverSocketId).emit('game:invite', { ...invite, fromUser: { _id: userId, fullname: socket.user?.fullname || 'Player' } });
+    socket.emit('game:invite:sent', invite);
+  });
+
+  socket.on('game:invite:response', ({ inviteId, accepted }) => {
+    const invite = getInvite(inviteId);
+    if (!invite || invite.toUserId !== userId) return;
+    clearInvite(inviteId);
+    const inviterSocket = getReceiverSocketId(invite.fromUserId);
+
+    if (!accepted) {
+      if (inviterSocket) io.to(inviterSocket).emit('game:invite:declined', { inviteId });
+      return;
+    }
+
+    const session = createSession({ gameType: invite.gameType, playerA: invite.fromUserId, playerB: invite.toUserId });
+    emitGameState(session);
+    if (inviterSocket) io.to(inviterSocket).emit('game:started', { sessionId: session.id, gameType: session.gameType, opponentId: userId });
+    socket.emit('game:started', { sessionId: session.id, gameType: session.gameType, opponentId: invite.fromUserId });
+  });
+
+  socket.on('game:action', async ({ sessionId, action }) => {
+    const result = applyGameAction({ sessionId, playerId: userId, action });
+    if (result.error) {
+      socket.emit('game:error', { message: result.error });
+      return;
+    }
+
+    emitGameState(result.session);
+    if (result.session.status === 'completed') {
+      await updateGameStats(result.session);
+      result.session.players.forEach((id) => {
+        const sid = getReceiverSocketId(id);
+        if (sid) io.to(sid).emit('game:ended', { sessionId, winnerId: result.session.state.winnerId, gameType: result.session.gameType });
+      });
     }
   });
 
+  socket.on('game:forfeit', async ({ sessionId }) => {
+    const session = forfeitSession({ sessionId, playerId: userId });
+    if (!session) return;
+    emitGameState(session);
+    await updateGameStats(session);
+    session.players.forEach((id) => {
+      const sid = getReceiverSocketId(id);
+      if (sid) io.to(sid).emit('game:ended', { sessionId, winnerId: session.state.winnerId, gameType: session.gameType });
+    });
+  });
+
+  socket.on('game:dashboard:request', async () => {
+    const me = await User.findById(userId).select('gameStats');
+    socket.emit('game:dashboard', me?.gameStats || null);
+  });
+
   socket.on('chat:opened', async ({ chatUserId }) => {
-    const filter = {
-      senderId: chatUserId,
-      receiverId: userId,
-      readBy: { $ne: userId },
-    };
+    const filter = { senderId: chatUserId, receiverId: userId, readBy: { $ne: userId } };
 
     try {
       const unreadMessages = await Message.find(filter).select('_id senderId receiverId');
-
       if (unreadMessages.length > 0) {
         await Message.updateMany(
           { _id: { $in: unreadMessages.map((m) => m._id) } },
-          {
-            $addToSet: { readBy: userId, deliveredTo: userId }, // Ensure delivery is tracked too
-            $set: { readAt: new Date() },
-          },
+          { $addToSet: { readBy: userId, deliveredTo: userId }, $set: { readAt: new Date() } },
         );
-        
+
         const senderSocketId = getReceiverSocketId(chatUserId);
         if (senderSocketId) {
           io.to(senderSocketId).emit('messages:read', {
@@ -135,7 +204,7 @@ io.on('connection', async (socket) => {
         }
       }
     } catch (error) {
-      console.error("Error in chat:opened:", error);
+      console.error('Error in chat:opened:', error);
     }
   });
 
@@ -144,8 +213,6 @@ io.on('connection', async (socket) => {
     await User.findByIdAndUpdate(userId, { lastSeen: new Date() });
     emitPresence();
     io.emit('user:last-seen', { userId, lastSeen: new Date().toISOString(), isOnline: true });
-    
-    // --- TRIGGER DELIVERY CHECK WHEN TAB BECOMES ACTIVE ---
     await processPendingDeliveries(userId);
   });
 
@@ -171,4 +238,4 @@ io.on('connection', async (socket) => {
   });
 });
 
-export { server, io, app };
+export { server, io, app, getSession };

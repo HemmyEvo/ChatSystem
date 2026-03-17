@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useChatStore } from '../store/useChatStore';
-import { Paperclip, Send, Mic, Video, User, X, Image as ImageIcon, Trash2, Square } from 'lucide-react';
+import { Paperclip, Send, Mic, Video, User, X, Image as ImageIcon, Trash2, Square, Dice5, Trophy } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useGameStore } from '../store/useGameStore';
 
 // 1. Set your audio paths here
 const messageSendSound = new Audio("/sounds/send.mp3");
@@ -26,7 +27,8 @@ function ChatFooter() {
   const timerRef = useRef(null);
   const textareaRef = useRef(null);
 
-  const { allContacts, getAllContacts, isUsersLoading,emitTypingEvent, sendMessage, soundSettings, replyTarget, setReplyTarget } = useChatStore();
+  const { allContacts, getAllContacts, isUsersLoading,emitTypingEvent, sendMessage, soundSettings, replyTarget, setReplyTarget, selectedUser } = useChatStore();
+  const { startInvite, requestDashboard } = useGameStore();
 
   const playSound = (audio) => {
     if (soundSettings.send) {
@@ -207,6 +209,12 @@ function ChatFooter() {
           </button>
         </div>
       )}
+
+      <div className='mb-2 flex items-center gap-2'>
+        <button type='button' onClick={() => selectedUser && startInvite('whot', selectedUser._id)} className='px-3 py-1.5 rounded-full bg-slate-700 text-slate-100 text-xs flex items-center gap-1 hover:bg-slate-600'><Trophy size={14} /> Play Whot</button>
+        <button type='button' onClick={() => selectedUser && startInvite('ludo', selectedUser._id)} className='px-3 py-1.5 rounded-full bg-slate-700 text-slate-100 text-xs flex items-center gap-1 hover:bg-slate-600'><Dice5 size={14} /> Play Ludo</button>
+        <button type='button' onClick={requestDashboard} className='px-3 py-1.5 rounded-full bg-cyan-900/60 text-cyan-200 text-xs'>My Game Dashboard</button>
+      </div>
 
       {/* --- MAIN INPUT ROW --- */}
       <form onSubmit={handleSendMessage} className='flex items-end gap-2 w-full box-border'>
