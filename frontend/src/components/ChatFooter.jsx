@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useChatStore } from '../store/useChatStore';
-import { Paperclip, Send, Mic, Video, FileText, User, X, Image as ImageIcon, Trash2, Square, PlayCircle, Loader2 } from 'lucide-react';
+import { Paperclip, Send, Mic, Video, User, X, Image as ImageIcon, Trash2, Square } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // 1. Set your audio paths here
@@ -22,13 +22,12 @@ function ChatFooter() {
 
   const fileInputRef = useRef(null);
   const videoInputRef = useRef(null);
-  const docInputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const timerRef = useRef(null);
 
   // Pull isSoundEnabled from the store
-  const { allContacts, getAllContacts, isUsersLoading,emitTypingEvent, sendMessage, soundSettings } = useChatStore();
+  const { allContacts, getAllContacts, isUsersLoading,emitTypingEvent, sendMessage, soundSettings, replyTarget, setReplyTarget } = useChatStore();
 
   // Helper to play sounds safely
   const playSound = (audio) => {
@@ -172,13 +171,18 @@ function ChatFooter() {
           <div className="flex-1 flex items-center justify-center bg-slate-900 rounded-lg overflow-hidden min-h-[200px] max-h-[40vh]">
             {previewMedia.type === 'image' && <img src={previewMedia.url} alt="Preview" className="max-h-full max-w-full object-contain" />}
             {previewMedia.type === 'video' && <video src={previewMedia.url} controls className="max-h-full max-w-full" />}
-            {previewMedia.type === 'document' && (
-              <div className="flex flex-col items-center text-slate-400">
-                <FileText size={48} className="mb-2" />
-                <span className="truncate max-w-[200px]">{previewMedia.file.name}</span>
-              </div>
-            )}
           </div>
+        </div>
+      )}
+
+
+      {replyTarget && (
+        <div className='mb-2 bg-slate-700/70 border-l-4 border-emerald-400 rounded-md px-3 py-2 text-sm text-slate-200 flex items-start justify-between'>
+          <div>
+            <p className='text-emerald-300 text-xs mb-1'>Replying to message</p>
+            <p className='line-clamp-1'>{replyTarget.text || 'Media message'}</p>
+          </div>
+          <button onClick={() => setReplyTarget(null)} type='button'><X size={16} /></button>
         </div>
       )}
 
@@ -192,7 +196,6 @@ function ChatFooter() {
             <div className='absolute bottom-12 left-0 bg-slate-700 rounded-lg shadow-xl p-2 flex flex-col gap-2 w-48 z-50'>
               <button type="button" onClick={() => fileInputRef.current?.click()} className='flex items-center gap-3 p-2 hover:bg-slate-600 rounded text-left text-sm text-slate-200'><ImageIcon size={18} className="text-blue-400" /> Image / Gallery</button>
               <button type="button" onClick={() => videoInputRef.current?.click()} className='flex items-center gap-3 p-2 hover:bg-slate-600 rounded text-left text-sm text-slate-200'><Video size={18} className="text-pink-400" /> Video</button>
-              <button type="button" onClick={() => docInputRef.current?.click()} className='flex items-center gap-3 p-2 hover:bg-slate-600 rounded text-left text-sm text-slate-200'><FileText size={18} className="text-purple-400" /> Document</button>
               <button type="button" onClick={() => setShowContactModal(true)} className='flex items-center gap-3 p-2 hover:bg-slate-600 rounded text-left text-sm text-slate-200'><User size={18} className="text-green-400" /> Share Contact</button>
             </div>
           )}
@@ -200,7 +203,6 @@ function ChatFooter() {
 
         <input type="file" hidden ref={fileInputRef} accept="image/*" onChange={(e) => handleFileUpload(e, 'image')} />
         <input type="file" hidden ref={videoInputRef} accept="video/*" onChange={(e) => handleFileUpload(e, 'video')} />
-        <input type="file" hidden ref={docInputRef} accept=".pdf,.doc,.docx,.txt" onChange={(e) => handleFileUpload(e, 'document')} />
 
         {isRecording ? (
           <div className="flex-1 bg-red-500/10 text-red-500 rounded-full px-4 py-2 flex items-center justify-between border border-red-500/30">

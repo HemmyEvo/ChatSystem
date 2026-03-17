@@ -21,6 +21,8 @@ const canInteract = async (senderId, receiverId) => {
   return { ok: true };
 };
 
+const visibleFilter = (myId) => ({ deletedFor: { $ne: myId } });
+
 export const messageController = {
   contact: async (req, res) => {
     try {
@@ -37,7 +39,10 @@ export const messageController = {
     try {
       const loggedInUserId = req.user._id;
       const messages = await Message.find({
-        $or: [{ senderId: loggedInUserId }, { receiverId: loggedInUserId }],
+        $and: [
+          { $or: [{ senderId: loggedInUserId }, { receiverId: loggedInUserId }] },
+          visibleFilter(loggedInUserId),
+        ],
       }).sort({ createdAt: -1 });
 
       const chatPartnerIds = [
@@ -69,6 +74,7 @@ export const messageController = {
           $match: {
             receiverId: loggedInUserId,
             readBy: { $ne: loggedInUserId },
+            deletedFor: { $ne: loggedInUserId },
           },
         },
         {
@@ -105,18 +111,21 @@ export const messageController = {
     try {
       const myId = req.user._id;
       const { id: userToChatId } = req.params;
-      if (myId.toString() === userToChatId) {
-        return res.status(400).json({ message: "Cannot fetch messages with yourself" });
-      }
 
       const messages = await Message.find({
-        $or: [
-          { senderId: myId, receiverId: userToChatId },
-          { senderId: userToChatId, receiverId: myId },
+        $and: [
+          {
+            $or: [
+              { senderId: myId, receiverId: userToChatId },
+              { senderId: userToChatId, receiverId: myId },
+            ],
+          },
+          visibleFilter(myId),
         ],
       })
         .populate('replyTo', 'text image video audio document senderId createdAt')
-        .populate('sharedContactId', 'fullname profilePicture email');
+        .populate('sharedContactId', 'fullname profilePicture email')
+        .sort({ createdAt: 1 });
 
       return res.status(200).json({ messages });
     } catch (error) {
@@ -130,10 +139,6 @@ export const messageController = {
       const { text, image, video, audio, document, sharedContactId, replyTo } = req.body;
       const senderId = req.user._id;
       const { id: receiverId } = req.params;
-
-      if (senderId.toString() === receiverId) {
-        return res.status(400).json({ message: "Cannot send a message to yourself" });
-      }
 
       if (!text && !image && !video && !audio && !document && !sharedContactId) {
         return res.status(400).json({ message: "Message content is required" });
@@ -174,22 +179,14 @@ export const messageController = {
 
       await newMessage.save();
       await newMessage.populate('replyTo', 'text image video audio document senderId createdAt');
-      if (sharedContactId) {
-        await newMessage.populate('sharedContactId', 'fullname profilePicture email');
-      }
+      if (sharedContactId) await newMessage.populate('sharedContactId', 'fullname profilePicture email');
 
       const receiverSocketId = getReceiverSocketId(receiverId);
-      if (receiverSocketId) {
-        io.to(receiverSocketId).emit('newMessage', newMessage);
-      }
+      if (receiverSocketId) io.to(receiverSocketId).emit('newMessage', newMessage);
 
       const senderSocketId = getReceiverSocketId(senderId.toString());
-      if (senderSocketId) {
-        io.to(senderSocketId).emit('chat:last-message', newMessage);
-      }
-      if (receiverSocketId) {
-        io.to(receiverSocketId).emit('chat:last-message', newMessage);
-      }
+      if (senderSocketId) io.to(senderSocketId).emit('chat:last-message', newMessage);
+      if (receiverSocketId) io.to(receiverSocketId).emit('chat:last-message', newMessage);
 
       return res.status(201).json({ message: 'Message sent successfully', data: newMessage });
     } catch (error) {
@@ -201,31 +198,41 @@ export const messageController = {
     }
   },
 
+  reactToMessage: async (req, res) => {
+    try {
+      const myId = req.user._id;
+      const { id: messageId } = req.params;
+      const { emoji } = req.body;
+      const message = await Message.findById(messageId);
+      if (!message) return res.status(404).json({ message: 'Message not found' });
+
+      message.reactions = (message.reactions || []).filter((r) => r.userId.toString() !== myId.toString());
+      if (emoji) message.reactions.push({ userId: myId, emoji });
+      await message.save();
+
+      const receiverSocketId = getReceiverSocketId(message.receiverId.toString());
+      const senderSocketId = getReceiverSocketId(message.senderId.toString());
+      if (receiverSocketId) io.to(receiverSocketId).emit('message:reaction-updated', { messageId, reactions: message.reactions });
+      if (senderSocketId) io.to(senderSocketId).emit('message:reaction-updated', { messageId, reactions: message.reactions });
+
+      return res.status(200).json({ message: 'Reaction updated', reactions: message.reactions });
+    } catch (error) {
+      console.error('Error reacting to message:', error);
+      return res.status(500).json({ message: 'Server error' });
+    }
+  },
+
   markAsRead: async (req, res) => {
     try {
       const myId = req.user._id;
       const { id: chatUserId } = req.params;
-
-      const unreadMessages = await Message.find({
-        senderId: chatUserId,
-        receiverId: myId,
-        readBy: { $ne: myId },
-      }).select('_id');
+      const unreadMessages = await Message.find({ senderId: chatUserId, receiverId: myId, readBy: { $ne: myId }, deletedFor: { $ne: myId } }).select('_id');
 
       if (unreadMessages.length) {
-        await Message.updateMany(
-          { _id: { $in: unreadMessages.map((m) => m._id) } },
-          { $addToSet: { readBy: myId }, $set: { readAt: new Date() } },
-        );
-
+        await Message.updateMany({ _id: { $in: unreadMessages.map((m) => m._id) } }, { $addToSet: { readBy: myId }, $set: { readAt: new Date() } });
         const chatUserSocketId = getReceiverSocketId(chatUserId);
         if (chatUserSocketId) {
-          io.to(chatUserSocketId).emit('messages:read', {
-            readerId: myId.toString(),
-            chatUserId,
-            messageIds: unreadMessages.map((m) => m._id.toString()),
-            readAt: new Date().toISOString(),
-          });
+          io.to(chatUserSocketId).emit('messages:read', { readerId: myId.toString(), chatUserId, messageIds: unreadMessages.map((m) => m._id.toString()), readAt: new Date().toISOString() });
         }
       }
 
@@ -240,40 +247,12 @@ export const messageController = {
     try {
       const myId = req.user._id;
       const { id: blockedUserId } = req.params;
-      if (myId.toString() === blockedUserId) {
-        return res.status(400).json({ message: 'Cannot block yourself' });
-      }
-
-      const updatedUser = await User.findByIdAndUpdate(
-        myId,
-        { $addToSet: { blockedUsers: blockedUserId } },
-        { new: true },
-      ).select('blockedUsers');
-
+      const updatedUser = await User.findByIdAndUpdate(myId, { $addToSet: { blockedUsers: blockedUserId } }, { new: true }).select('blockedUsers');
       const blockedSocketId = getReceiverSocketId(blockedUserId);
-      if (blockedSocketId) {
-        io.to(blockedSocketId).emit('chat:blocked', { byUserId: myId.toString() });
-      }
+      if (blockedSocketId) io.to(blockedSocketId).emit('chat:blocked', { byUserId: myId.toString() });
       return res.status(200).json({ message: 'User blocked', blockedUsers: updatedUser.blockedUsers });
     } catch (error) {
       console.error('Error blocking user:', error);
-      return res.status(500).json({ message: 'Server error' });
-    }
-  },
-
-  unblockUser: async (req, res) => {
-    try {
-      const myId = req.user._id;
-      const { id: blockedUserId } = req.params;
-      const updatedUser = await User.findByIdAndUpdate(
-        myId,
-        { $pull: { blockedUsers: blockedUserId } },
-        { new: true },
-      ).select('blockedUsers');
-
-      return res.status(200).json({ message: 'User unblocked', blockedUsers: updatedUser.blockedUsers });
-    } catch (error) {
-      console.error('Error unblocking user:', error);
       return res.status(500).json({ message: 'Server error' });
     }
   },
@@ -282,36 +261,41 @@ export const messageController = {
     try {
       const myId = req.user._id;
       const { id: targetUserId } = req.params;
-
-      await Message.deleteMany({
+      await Message.updateMany({
         $or: [
           { senderId: myId, receiverId: targetUserId },
           { senderId: targetUserId, receiverId: myId },
         ],
-      });
-
-      const targetSocketId = getReceiverSocketId(targetUserId);
-      if (targetSocketId) {
-        io.to(targetSocketId).emit('chat:messages-cleared', { byUserId: myId.toString() });
-      }
-
-      return res.status(200).json({ message: 'All messages deleted for this chat' });
+      }, { $addToSet: { deletedFor: myId } });
+      return res.status(200).json({ message: 'Chat deleted for you' });
     } catch (error) {
       console.error('Error deleting all messages:', error);
       return res.status(500).json({ message: 'Server error' });
     }
   },
 
-  deleteMessage: async (req, res) => {
+  deleteMessageForMe: async (req, res) => {
     try {
       const myId = req.user._id;
       const { id: messageId } = req.params;
-      const messages = await Message.findOne({ _id: messageId, senderId: myId });
-      if (!messages) return res.status(404).json({ message: 'Message not found or you are not the sender' });
-      await Message.findByIdAndDelete(messageId);
-      return res.status(200).json({ message: 'Message deleted successfully' });
+      await Message.findByIdAndUpdate(messageId, { $addToSet: { deletedFor: myId } });
+      return res.status(200).json({ message: 'Message deleted for you' });
     } catch (error) {
-      console.error('Error deleting message:', error);
+      console.error('Error deleting message for me:', error);
+      return res.status(500).json({ message: 'Server error' });
+    }
+  },
+
+  deleteMessageForEveryone: async (req, res) => {
+    try {
+      const myId = req.user._id;
+      const { id: messageId } = req.params;
+      const message = await Message.findOne({ _id: messageId, senderId: myId });
+      if (!message) return res.status(404).json({ message: 'Message not found or not your message' });
+      await Message.findByIdAndDelete(messageId);
+      return res.status(200).json({ message: 'Message deleted for everyone' });
+    } catch (error) {
+      console.error('Error deleting message for everyone:', error);
       return res.status(500).json({ message: 'Server error' });
     }
   },
