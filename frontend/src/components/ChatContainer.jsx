@@ -5,12 +5,16 @@ import ChatBody from './ChatBody';
 import ChatFooter from './ChatFooter';
 
 function ChatContainer() {
-  const {getMessagesByUserId,selectedUser} = useChatStore();
+  const {getMessagesByUserId,selectedUser,subscribeToNewMessages,unsubscribeFromNewMessages} = useChatStore();
   useEffect(() => {
     if(selectedUser){
       getMessagesByUserId(selectedUser._id);
     }
-  }, [selectedUser, getMessagesByUserId]);
+    subscribeToNewMessages();
+
+    // Cleanup on unmount
+    return () => unsubscribeFromNewMessages();
+  }, [selectedUser, getMessagesByUserId, subscribeToNewMessages, unsubscribeFromNewMessages]);
   return (
     <>
     <ChatHeader />

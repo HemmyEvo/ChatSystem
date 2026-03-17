@@ -3,6 +3,7 @@ import { api } from "../lib/axios";
 import toast from "react-hot-toast";
 import { useAuthStore } from "./useAuthStore";
 
+
 export const useChatStore = create((set, get) => ({
     allContacts: [],
     chats: [],
@@ -11,7 +12,8 @@ export const useChatStore = create((set, get) => ({
     selectedUser: null,
     isUsersLoading: false,
     isMessagesLoading: false,
-  isSoundEnabled: JSON.parse(localStorage.getItem("isSoundEnabled")) === true,
+    isTyping: false,
+    isSoundEnabled: JSON.parse(localStorage.getItem("isSoundEnabled")) === true,
 
   toggleSound: () => {
     localStorage.setItem("isSoundEnabled", !get().isSoundEnabled);
@@ -21,7 +23,15 @@ export const useChatStore = create((set, get) => ({
     setActiveTab: (tab) => set({ activeTab: tab }),
 
     setSelectedUser: (user) => set({ selectedUser: user }),
+    emitTypingEvent: () => {
+        const socket = useAuthStore.getState().socket;
+        const selectedUser = get().selectedUser;
+        const authUser = useAuthStore.getState().authUser;
 
+        if (socket && selectedUser) {
+            socket.emit('isTyping', { senderId: authUser._id, receiverId: selectedUser._id });
+        }
+    },
     getAllContacts: async () => {
         set({ isUsersLoading: true });
         try {
@@ -114,8 +124,44 @@ export const useChatStore = create((set, get) => ({
             throw error;
         }
     },
+    subscribeToTypingEvents: () => {
+        const socket = useAuthStore.getState().socket;
 
+        socket.on('typing', ({ senderId }) => {
+            const selectedUser = get().selectedUser;
+            if (selectedUser && selectedUser._id === senderId) {
+                set({ isTyping: true });
 
+                setTimeout(() => set({ isTyping: false }), 3000); // Reset after 3 seconds
+            }
+        });
+    },
+    unsubscribeFromTypingEvents: () => {
+        const socket = useAuthStore.getState().socket;
+        socket.off('typing');
+    },
+    subscribeToNewMessages: () => {
+        const { selectedUser, isSoundEnabled } = get();
+        if (!selectedUser) return;
+        const socket = useAuthStore.getState().socket;
+        socket.on("newMessage", (message) => {
+                const isMessageForCurrentChat = message.senderId === selectedUser._id ;
+                if(!isMessageForCurrentChat) return;
+
+                const currentMessages = get().messages;
+                set({ messages: [...currentMessages, message] });
+                if (isSoundEnabled) {
+                                        
+                    const NotificationSound = new Audio("/sounds/notification.mp3");
+                    NotificationSound.currentTime = 0;
+                    NotificationSound.play().catch((error) => console.error("Error playing notification sound:", error));
+                }
+        });
+    },
+    unsubscribeFromNewMessages: () => {
+        const socket = useAuthStore.getState().socket;
+        socket.off("newMessage");
+    },
     deleteMessage: async (messageId) => {
         const { messages } = get();
         try {

@@ -69,3 +69,28 @@ export const arjectProtection = async (req, res, next) => {
         res.status(500).json({ message: 'Internal server error' });
     }
 }
+
+
+export const socketAuthmiddleware = async (socket, next) => {
+    try{
+        const token = socket.handshake.headers.cookie?.split('; ').find((row) => row.startsWith('token='))?.split('=')[1];
+        if(!token){
+            console.error('No token provided in socket handshake');
+            return next(new Error('Unauthorized - No token provided'));
+        }
+        const decoded = jwt.verify(token, JWT_SECRET || 'your_jwt_secret_key');
+        if(!decoded) return next(new Error('Unauthorized - Invalid token'));
+        const user = await User.findById(decoded.id).select('-password');
+        if(!user) return next(new Error('User not found'));
+
+        //attach user info to socket object for later use in event handlers
+        socket.user = user;
+        socket.userId = user._id.toString();
+        next();
+
+    }
+    catch(error){
+        console.error('Error in socket authentication:', error);
+        return next(new Error('Unauthorized- Socket authentication failed'));
+    }
+}

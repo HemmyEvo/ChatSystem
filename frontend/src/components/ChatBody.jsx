@@ -5,8 +5,7 @@ import { useAuthStore } from '../store/useAuthStore';
 import { X, FileText, Download, User, Loader2, Play, MoreVertical, Trash2 } from 'lucide-react';
 import SharedContactCard from './SharedContactCard';
 
-// 1. Set your receive audio path here
-const messageReceiveSound = new Audio("/sounds/receive.mp3");
+
 
 const formatTime = (dateString) => {
   if (!dateString) return '';
@@ -18,7 +17,7 @@ function ChatBody() {
   const { authUser } = useAuthStore();
   
   // Pull deleteMessage and isSoundEnabled
-  const { messages, selectedUser, isMessagesLoading, deleteMessage, isSoundEnabled } = useChatStore();
+  const { messages, selectedUser,subscribeToTypingEvents, unsubscribeFromTypingEvents, isTyping, isMessagesLoading, deleteMessage } = useChatStore();
   
   const [lightboxMedia, setLightboxMedia] = useState(null); 
   
@@ -27,25 +26,22 @@ function ChatBody() {
   const touchTimerRef = useRef(null);
 
   const messagesEndRef = useRef(null);
-  const prevMessagesLength = useRef(0);
+
 
   // --- 2. RECEIVE SOUND EFFECT ---
-  // Since you don't have socket logic set up yet, this effect monitors the messages array length
-  useEffect(() => {
-    if (messages.length > prevMessagesLength.current && messages.length > 0) {
-      const lastMessage = messages[messages.length - 1];
-      // Only play sound if it's from someone else
-      if (lastMessage.senderId !== authUser?.data?._id && isSoundEnabled) {
-        messageReceiveSound.currentTime = 0;
-        messageReceiveSound.play().catch(e => console.log("Audio play failed:", e));
-      }
-    }
-    prevMessagesLength.current = messages.length;
-  }, [messages, isSoundEnabled, authUser]);
+
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+        // Start listening when the component loads
+        subscribeToTypingEvents();
+        // Stop listening when we close the chat (cleanup)
+        return () => unsubscribeFromTypingEvents();
+    }, [subscribeToTypingEvents, unsubscribeFromTypingEvents]);
+
 
   // --- 3. MOBILE LONG PRESS LOGIC ---
   const handleTouchStart = (msgId) => {
@@ -172,6 +168,28 @@ if (isMessagesLoading) {
               </div>
             );
           })}
+         {isTyping && (
+            <div className="chat chat-start mb-4">
+              <div className="chat-image avatar">
+                <div className="size-10 rounded-full border border-slate-700">
+                  <img src={selectedUser?.profilePicture || "/avatar.png"} alt="Avatar" />
+                </div>
+              </div>
+              <div className="chat-header flex items-center gap-1 mb-1 relative">
+                <span className="opacity-50 text-xs hidden md:inline-block">
+                  {selectedUser?.fullname}
+                </span>
+              </div>
+              {/* Animated 3 dots */}
+              <div className="chat-bubble bg-slate-700 text-slate-200 flex items-center justify-center gap-1.5 w-16 h-10">
+                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+              </div>
+            </div>
+          )}
+
+          {/* This empty div is used to auto-scroll to the bottom */}
           <div ref={messagesEndRef} />
         </div>
       )}

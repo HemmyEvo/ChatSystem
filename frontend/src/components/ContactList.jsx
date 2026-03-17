@@ -3,9 +3,11 @@ import { useChatStore } from '../store/useChatStore';
 import UsersLoadingSkeleton from './UsersLoadingSkeleton';
 import { Contact } from 'lucide-react';
 import NoChatsFound from './NoChatsFound';
+import { useAuthStore } from '../store/useAuthStore';
 
 function ContactList() {
   const { allContacts,getAllContacts,setSelectedUser, isUsersLoading } = useChatStore();
+    const { onlineUsers } = useAuthStore();
   
   useEffect(() => {
     getAllContacts();
@@ -22,7 +24,7 @@ function ContactList() {
           onClick={() => setSelectedUser(contact  )}
         >
           <div className="flex items-start gap-3">
-            <div className={`avatar online`}>
+            <div className={`avatar ${onlineUsers.includes(contact._id) ? "online":"offline"}`}>
               <div className="size-8 rounded-full">  
                 <img src={contact.profilePicture || "/avatar.png"} alt={contact.fullname} />
               </div>

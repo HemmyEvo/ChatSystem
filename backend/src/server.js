@@ -5,11 +5,12 @@ import messageRoutes from './routes/message.js';
 import { connectDB } from './lib/db.js';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
+import { app, server } from './lib/socket.js';
 
 
 dotenv.config();
 
-const app = express();
+
 const port = process.env.PORT || 3000;
 
 app.use(express.json({ limit: "5mb" }));
@@ -24,7 +25,7 @@ app.use("/api/message", messageRoutes);
 console.log(`Environment: ${process.env.NODE_ENV}`);
 
 if (!process.env.VERCEL) {
-  app.listen(port, () => {
+  server.listen(port, () => {
     console.log(`Server is running locally on http://localhost:${port}`);
   });
 }

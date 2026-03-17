@@ -28,7 +28,7 @@ function ChatFooter() {
   const timerRef = useRef(null);
 
   // Pull isSoundEnabled from the store
-  const { allContacts, getAllContacts, isUsersLoading, sendMessage, isSoundEnabled } = useChatStore();
+  const { allContacts, getAllContacts, isUsersLoading,emitTypingEvent, sendMessage, isSoundEnabled } = useChatStore();
 
   // Helper to play sounds safely
   const playSound = (audio) => {
@@ -216,7 +216,7 @@ function ChatFooter() {
           <input 
             type="text" 
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {emitTypingEvent(); setText(e.target.value)}}
           
             placeholder={previewMedia ? "Add a caption..." : "Type a message..."} 
             className='flex-1 bg-slate-700 text-white rounded-full px-4 py-2 focus:outline-none focus:ring-1 focus:ring-cyan-500 placeholder-slate-400 disabled:opacity-50'

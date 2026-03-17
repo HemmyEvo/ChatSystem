@@ -1,7 +1,8 @@
 import cloudinary from "../lib/cloudinary.js";
+import { getReceiverSocketId } from "../lib/socket.js";
 import Message from "../models/Message.js";
 import User from "../models/User.js";
-
+import { io } from "../lib/socket.js";
 export const messageController = {
     contact: async (req, res) => {
         try {
@@ -139,7 +140,10 @@ export const messageController = {
         if (sharedContactId) {
             await newMessage.populate('sharedContactId', 'fullname profilePicture email');
         }
-
+        const receiverSocketId = getReceiverSocketId(receiverId);
+        if (receiverSocketId) {
+            io.to(receiverSocketId).emit("newMessage", newMessage);
+        }
         return res.status(201).json({ 
             message: "Message sent successfully", 
             data: newMessage 
