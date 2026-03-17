@@ -28,11 +28,11 @@ function ChatFooter() {
   const timerRef = useRef(null);
 
   // Pull isSoundEnabled from the store
-  const { allContacts, getAllContacts, isUsersLoading,emitTypingEvent, sendMessage, isSoundEnabled } = useChatStore();
+  const { allContacts, getAllContacts, isUsersLoading,emitTypingEvent, sendMessage, soundSettings } = useChatStore();
 
   // Helper to play sounds safely
   const playSound = (audio) => {
-    if (isSoundEnabled) {
+    if (soundSettings.send) {
       audio.currentTime = 0;
       audio.play().catch(e => console.log("Audio play failed:", e));
     }

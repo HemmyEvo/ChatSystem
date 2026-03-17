@@ -64,6 +64,26 @@ export const messageController = {
 
       const chatPartners = await User.find({ _id: { $in: chatPartnerIds } }).select('-password');
 
+      const unreadByPartner = await Message.aggregate([
+        {
+          $match: {
+            receiverId: loggedInUserId,
+            readBy: { $ne: loggedInUserId },
+          },
+        },
+        {
+          $group: {
+            _id: '$senderId',
+            count: { $sum: 1 },
+          },
+        },
+      ]);
+
+      const unreadMap = unreadByPartner.reduce((acc, item) => {
+        acc[item._id.toString()] = item.count;
+        return acc;
+      }, {});
+
       return res.status(200).json({
         chatPartners: chatPartners.map((partner) => ({
           _id: partner._id,
@@ -72,6 +92,7 @@ export const messageController = {
           profilePicture: partner.profilePicture,
           lastSeen: partner.lastSeen,
           lastMessage: lastMessageByPartner[partner._id.toString()] || null,
+          unreadCount: unreadMap[partner._id.toString()] || 0,
         })),
       });
     } catch (error) {
