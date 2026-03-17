@@ -1,3 +1,4 @@
+import cloudinary from "../lib/cloudinary.js";
 import Message from "../models/Message.js";
 import User from "../models/User.js";
 
@@ -81,40 +82,78 @@ export const messageController = {
         }
     },
     sendMessage: async (req, res) => {
-        try{
-            const {text, image} = req.body;
-            const senderId = req.user._id;
-            const { id:receiverId } = req.params;
-        
-            if(senderId === receiverId){
-                return res.status(400).json({ message: "Cannot send message to yourself" });
-            }
-            if(!text && !image){
-                return res.status(400).json({ message: "Message content is required" });
-            }
-            const receiver = await User.findById(receiverId);
-            if(!receiver){
-                return res.status(404).json({ message: "Receiver not found" });
-            }
-            let imageUrl;
-            if(image){
-                const uploadResult = await cloudinary.uploader.upload(image)
-                imageUrl = uploadResult.secure_url;
-            }
-            const newMessage = new Message({
-                senderId,
-                receiverId,
-                text,
-                image: imageUrl
-            });
+    try {
+        const { text, image, video, audio, document, sharedContactId } = req.body;
+        const senderId = req.user._id;
+        const { id: receiverId } = req.params;
 
-            await newMessage.save();
-           return res.status(201).json({ message: "Message sent successfully", data: newMessage });
-
+        // 1. Basic Validations
+        if (senderId.toString() === receiverId) {
+            return res.status(400).json({ message: "Cannot send a message to yourself" });
         }
-        catch(error){
-            console.error('Error sending message:', error);
-            return res.status(500).json({ message: "Server error"});
+
+        // Must have at least one type of content
+        if (!text && !image && !video && !audio && !document && !sharedContactId) {
+            return res.status(400).json({ message: "Message content is required" });
+        }
+
+        const receiver = await User.findById(receiverId);
+        if (!receiver) {
+            return res.status(404).json({ message: "Receiver not found" });
+        }
+
+        // 2. Cloudinary Upload Helper
+        // Using resource_type: "auto" allows Cloudinary to figure out if it's an image, video, or raw file (PDF)
+        const uploadMedia = async (fileBase64) => {
+            if (!fileBase64) return null;
+            const uploadResult = await cloudinary.uploader.upload(fileBase64, {
+                resource_type: "auto", 
+                folder: "chat_attachments" // Optional: keeps your cloudinary dashboard organized
+            });
+            return uploadResult.secure_url;
+        };
+
+        // 3. Process all potential media uploads concurrently (faster than doing them one by one)
+        const [imageUrl, videoUrl, audioUrl, documentUrl] = await Promise.all([
+            uploadMedia(image),
+            uploadMedia(video),
+            uploadMedia(audio),
+            uploadMedia(document)
+        ]);
+
+        // 4. Save to Database
+        const newMessage = new Message({
+            senderId,
+            receiverId,
+            text,
+            image: imageUrl,
+            video: videoUrl,
+            audio: audioUrl,
+            document: documentUrl,
+            sharedContactId
+        });
+
+        await newMessage.save();
+
+        // Optional: If you want the response to include the full contact details instead of just the ID
+        if (sharedContactId) {
+            await newMessage.populate('sharedContactId', 'fullname profilePicture email');
+        }
+
+        return res.status(201).json({ 
+            message: "Message sent successfully", 
+            data: newMessage 
+        });
+
+    } catch (error) {
+        console.error('Error sending message:', error);
+        
+        // Handle Cloudinary file size limits gracefully
+        if (error.http_code === 413) {
+            return res.status(413).json({ message: "File is too large" });
+        }
+        
+        return res.status(500).json({ message: "Server error" });
         }   
     },
     deleteMessage: async (req, res) => {
