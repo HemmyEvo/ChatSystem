@@ -4,7 +4,7 @@ const gameSessions = new Map();
 const pendingInvites = new Map();
 
 const suits = ['circle', 'triangle', 'cross', 'star', 'square'];
-const whotNumbers = [1,2,3,4,5,7,8,10,11,12,13,14];
+const whotNumbers = [1, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14];
 
 const createWhotDeck = () => {
   const deck = [];
@@ -13,20 +13,25 @@ const createWhotDeck = () => {
       deck.push({ id: `${suit}-${number}-${crypto.randomUUID()}`, suit, number, label: `${number}` });
     });
   });
+
   for (let i = 0; i < 5; i += 1) {
     deck.push({ id: `whot-20-${i}-${crypto.randomUUID()}`, suit: 'whot', number: 20, label: 'WHOT' });
   }
+
   return deck.sort(() => Math.random() - 0.5);
 };
 
 const initWhotState = (players) => {
   const deck = createWhotDeck();
   const hands = {};
+
   players.forEach((playerId) => {
     hands[playerId] = deck.splice(0, 6);
   });
+
   let top = deck.shift();
   while (top?.suit === 'whot' && deck.length) top = deck.shift();
+
   return {
     deck,
     discard: [top],
@@ -34,15 +39,20 @@ const initWhotState = (players) => {
     currentPlayer: players[0],
     pendingDraw: 0,
     skipNext: false,
+    requestedSuit: null,
     winnerId: null,
   };
 };
 
-const canPlayWhotCard = (card, topCard) => card.suit === 'whot' || card.suit === topCard.suit || card.number === topCard.number;
+const canPlayWhotCard = ({ card, topCard, requestedSuit }) => {
+  if (card.suit === 'whot') return true;
+  if (requestedSuit) return card.suit === requestedSuit;
+  return card.suit === topCard.suit || card.number === topCard.number;
+};
 
 const rollDice = () => Math.floor(Math.random() * 6) + 1;
-
 const ludoSafeSpots = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
+const ludoHomeStart = 52;
 
 const initLudoState = (players) => ({
   tokens: {
@@ -55,10 +65,7 @@ const initLudoState = (players) => ({
 });
 
 const nextPlayer = (players, current) => players[(players.indexOf(current) + 1) % players.length];
-
 const ludoEntryIndex = (playerIndex) => (playerIndex === 0 ? 0 : 26);
-
-const ludoHomeStart = 52;
 
 const buildPublicState = (session, viewerId) => {
   if (session.gameType === 'whot') {
@@ -69,6 +76,7 @@ const buildPublicState = (session, viewerId) => {
       status: session.status,
       currentPlayer: session.state.currentPlayer,
       pendingDraw: session.state.pendingDraw,
+      requestedSuit: session.state.requestedSuit,
       topCard: session.state.discard[session.state.discard.length - 1],
       myHand: session.state.hands[viewerId] || [],
       myCount: session.state.hands[viewerId]?.length || 0,
@@ -135,16 +143,23 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
         hand.push(session.state.deck.shift());
       }
       session.state.pendingDraw = 0;
+      session.state.requestedSuit = null;
       session.state.currentPlayer = nextPlayer(session.players, playerId);
     } else if (action.type === 'play') {
       const cardIndex = hand.findIndex((card) => card.id === action.cardId);
       if (cardIndex === -1) return { error: 'Card not found in your hand.' };
       const card = hand[cardIndex];
-      if (!canPlayWhotCard(card, topCard)) return { error: 'Card does not match suit, number, or WHOT.' };
+
+      if (!canPlayWhotCard({ card, topCard, requestedSuit: session.state.requestedSuit })) {
+        return { error: 'Card does not match the current request.' };
+      }
+      if (card.number === 20 && !suits.includes(action.requestedSuit)) {
+        return { error: 'Pick a requested suit for WHOT card.' };
+      }
 
       hand.splice(cardIndex, 1);
       session.state.discard.push(card);
-
+      session.state.requestedSuit = card.number === 20 ? action.requestedSuit : null;
       if (card.number === 2) session.state.pendingDraw += 2;
       if (card.number === 5) session.state.pendingDraw += 3;
       if (card.number === 8) session.state.skipNext = true;
@@ -183,6 +198,7 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
         pos += steps;
         if (pos > 57) return { error: 'Move exceeds home path.' };
       }
+
       playerTokens[tokenIndex] = pos;
 
       const opponentId = session.players.find((id) => id !== playerId);
@@ -193,8 +209,7 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
         }
       });
 
-      const allHome = playerTokens.every((tokenPos) => tokenPos === 57);
-      if (allHome) {
+      if (playerTokens.every((tokenPos) => tokenPos === 57)) {
         session.state.winnerId = playerId;
         session.status = 'completed';
       }

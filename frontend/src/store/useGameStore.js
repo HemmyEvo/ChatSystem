@@ -2,10 +2,21 @@ import { create } from 'zustand';
 import toast from 'react-hot-toast';
 import { useAuthStore } from './useAuthStore';
 
+let dashboardTimer = null;
+
+const showDashboardForAWhile = (set) => {
+  if (dashboardTimer) clearTimeout(dashboardTimer);
+  set({ isDashboardVisible: true });
+  dashboardTimer = setTimeout(() => {
+    set({ isDashboardVisible: false });
+  }, 7000);
+};
+
 export const useGameStore = create((set, get) => ({
   pendingInvite: null,
   activeGame: null,
   dashboard: null,
+  isDashboardVisible: false,
 
   startInvite: (gameType, toUserId) => {
     const socket = useAuthStore.getState().socket;
@@ -40,6 +51,7 @@ export const useGameStore = create((set, get) => ({
     const game = get().activeGame;
     if (!socket?.connected || !game) return;
     socket.emit('game:forfeit', { sessionId: game.sessionId });
+    set({ activeGame: null });
   },
 
   requestDashboard: () => {
@@ -75,11 +87,13 @@ export const useGameStore = create((set, get) => ({
     socket.on('game:ended', ({ winnerId }) => {
       const me = useAuthStore.getState().authUser?._id;
       toast.success(winnerId === me ? 'You won 🎉' : 'Game over. Good match!');
+      set({ activeGame: null });
       get().requestDashboard();
     });
 
     socket.on('game:dashboard', (dashboard) => {
       set({ dashboard });
+      showDashboardForAWhile(set);
       if (!dashboard) {
         toast('No game stats yet. Play a match first.');
       }
