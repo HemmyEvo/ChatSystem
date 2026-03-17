@@ -11,6 +11,13 @@ const messageSchema = new mongoose.Schema(
     document: { type: String },
     sharedContactId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     replyTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Message' },
+    reactions: [
+      {
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+        emoji: { type: String, required: true },
+      },
+    ],
+    deletedFor: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     readBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     readAt: { type: Date },
   },
