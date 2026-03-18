@@ -88,7 +88,7 @@ const getUniversalPos = (relativePos, color) => {
   return (relativePos + colorOffsets[color]) % 52;
 };
 
-const canUnlockToken = (diceValues) => diceValues.includes(6) || (diceValues.length === 2 && (diceValues[0] + diceValues[1] === 6));
+const canUnlockToken = (diceValues) => diceValues.includes(6);
 
 const hasAnyValidMove = (tokens, diceValues) => {
   if (!diceValues.length) return false;
@@ -101,6 +101,9 @@ const hasAnyValidMove = (tokens, diceValues) => {
     token.pos >= 0 && token.pos < 57 && diceValues.some((die) => token.pos + die <= 57)
   ));
 };
+
+const hasRemainingTokens = (tokens) => tokens.some((token) => token.pos !== -2);
+
 
 const buildPublicState = (session, viewerId) => {
   if (session.gameType === 'whot') {
@@ -258,17 +261,11 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
         if (selectedDie === 6) {
           diceToConsume = [requestedDieIndex];
           nextPos = 0;
-        } else if (selectedDie !== null && selectedOtherDie !== null && selectedDie + selectedOtherDie === 6) {
-          diceToConsume = [0, 1];
-          nextPos = 0;
         } else if (requestedDieIndex === null && diceValues.includes(6)) {
           diceToConsume = [diceValues.indexOf(6)];
           nextPos = 0;
-        } else if (requestedDieIndex === null && diceValues.length === 2 && diceValues[0] + diceValues[1] === 6) {
-          diceToConsume = [0, 1];
-          nextPos = 0;
         } else {
-          return { error: 'Need a 6 or a total of 6 to bring token out.' };
+          return { error: 'Need a single die showing 6 to bring token out.' };
         }
       } else {
         let usableDieIndex = -1;
@@ -311,7 +308,7 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
               color: oppToken.color,
               fromPos: oppToken.pos,
             });
-            oppToken.pos = -1;
+            oppToken.pos = -2;
           }
         });
       }
@@ -328,6 +325,13 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
       };
 
       if (playerTokens.every((playerToken) => playerToken.pos === 57)) {
+        session.state.winnerId = playerId;
+        session.status = 'completed';
+      }
+
+      const opponentId = session.players.find((id) => id !== playerId);
+      const opponentTokens = session.state.tokens[opponentId];
+      if (session.status === 'active' && !hasRemainingTokens(opponentTokens)) {
         session.state.winnerId = playerId;
         session.status = 'completed';
       }

@@ -219,11 +219,9 @@ const getUniversalPos = (relativePos, playerIndex) => {
 const hasValidMoves = (tokens, diceValues) => {
   if (!diceValues || diceValues.length === 0) return false;
   
-  // NIGERIAN RULE: Check if we have a natural 6, or if both dice sum to exactly 6
   const hasSix = diceValues.includes(6);
-  const sumIsSix = diceValues.length === 2 && (diceValues[0] + diceValues[1] === 6);
-  
-  if ((hasSix || sumIsSix) && tokens.includes(-1)) return true;
+
+  if (hasSix && tokens.includes(-1)) return true;
 
   // Check if any token on the track can move without overshooting Home (57)
   for (const t of tokens) {
@@ -377,21 +375,14 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
       let pos = playerTokens[tokenIndex];
 
       if (pos === -1) {
-        // NIGERIAN RULE FIX: Allow natural 6 OR sum of both dice to equal 6 to unlock a seed
         const die6Index = session.state.diceValues.indexOf(6);
-        
+
         if (die6Index !== -1) {
-          // Use the natural 6
           pos = 0;
           session.state.diceValues.splice(die6Index, 1);
           playerTokens[tokenIndex] = pos;
-        } else if (session.state.diceValues.length === 2 && session.state.diceValues[0] + session.state.diceValues[1] === 6) {
-          // Consume both dice (e.g. 3+3, 4+2, 5+1)
-          pos = 0;
-          session.state.diceValues = []; 
-          playerTokens[tokenIndex] = pos;
         } else {
-          return { error: 'Need a 6 (or dice that sum to 6) to bring token out.' };
+          return { error: 'Need a single die showing 6 to bring token out.' };
         }
       } else {
         // Normal track movement
