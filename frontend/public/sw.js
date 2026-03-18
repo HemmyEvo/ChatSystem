@@ -1,5 +1,5 @@
 const CACHE_NAME = 'existo-chatapp-v1';
-const APP_SHELL = ['/', '/manifest.webmanifest', '/favicon.svg', '/avatar.png'];
+const APP_SHELL = ['/', '/manifest.webmanifest', '/favicon.svg', '/logo.jpg'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
