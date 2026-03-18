@@ -2,22 +2,32 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Camera,
   CameraOff,
+  CircleDot,
+  Download,
   Eraser,
   MapPin,
   Mic,
   MicOff,
   MonitorUp,
   Phone,
+  PhoneMissed,
   PhoneOff,
+  Radio,
   Video,
-  VideoOff,
 } from 'lucide-react';
 import { useCallStore } from '../store/useCallStore';
 import { useAuthStore } from '../store/useAuthStore';
 
+const formatDuration = (seconds = 0) => {
+  const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const secs = Math.floor(seconds % 60).toString().padStart(2, '0');
+  return `${mins}:${secs}`;
+};
+
+const formatMissedAt = (value) => new Date(value).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
 const DrawingCanvas = ({ strokes, draftStroke, onPointerDown, onPointerMove, onPointerUp }) => {
   const canvasRef = useRef(null);
-
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -27,7 +37,6 @@ const DrawingCanvas = ({ strokes, draftStroke, onPointerDown, onPointerMove, onP
     canvas.height = rect.height * window.devicePixelRatio;
     ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
     ctx.clearRect(0, 0, rect.width, rect.height);
-
     const drawStroke = (stroke) => {
       if (!stroke?.points?.length) return;
       ctx.strokeStyle = stroke.color;
@@ -43,7 +52,6 @@ const DrawingCanvas = ({ strokes, draftStroke, onPointerDown, onPointerMove, onP
       });
       ctx.stroke();
     };
-
     strokes.forEach(drawStroke);
     if (draftStroke) drawStroke(draftStroke);
   }, [strokes, draftStroke]);
@@ -51,25 +59,19 @@ const DrawingCanvas = ({ strokes, draftStroke, onPointerDown, onPointerMove, onP
   const normalizePoint = (event) => {
     const rect = canvasRef.current.getBoundingClientRect();
     const point = 'touches' in event ? event.touches[0] : event;
-    return {
-      x: Math.min(Math.max((point.clientX - rect.left) / rect.width, 0), 1),
-      y: Math.min(Math.max((point.clientY - rect.top) / rect.height, 0), 1),
-    };
+    return { x: Math.min(Math.max((point.clientX - rect.left) / rect.width, 0), 1), y: Math.min(Math.max((point.clientY - rect.top) / rect.height, 0), 1) };
   };
 
   return (
     <canvas
       ref={canvasRef}
-      className="absolute inset-0 h-full w-full touch-none z-10"
+      className="absolute inset-0 z-10 h-full w-full touch-none"
       onMouseDown={(event) => onPointerDown(normalizePoint(event))}
       onMouseMove={(event) => onPointerMove(normalizePoint(event))}
       onMouseUp={onPointerUp}
       onMouseLeave={onPointerUp}
       onTouchStart={(event) => onPointerDown(normalizePoint(event))}
-      onTouchMove={(event) => {
-        event.preventDefault();
-        onPointerMove(normalizePoint(event));
-      }}
+      onTouchMove={(event) => { event.preventDefault(); onPointerMove(normalizePoint(event)); }}
       onTouchEnd={onPointerUp}
     />
   );
@@ -77,126 +79,122 @@ const DrawingCanvas = ({ strokes, draftStroke, onPointerDown, onPointerMove, onP
 
 function VideoSurface({ stream, muted = false, mirrored = false, fallbackAvatar, title, subtitle }) {
   const videoRef = useRef(null);
-  
-  useEffect(() => {
-    if (videoRef.current) videoRef.current.srcObject = stream || null;
-  }, [stream]);
-
+  useEffect(() => { if (videoRef.current) videoRef.current.srcObject = stream || null; }, [stream]);
   const hasVideo = Boolean(stream?.getVideoTracks?.().some((track) => track.readyState === 'live' && track.enabled));
 
   return (
-    <div className="absolute inset-0 h-full w-full flex flex-col bg-slate-900 overflow-hidden">
+    <div className="relative h-full w-full overflow-hidden rounded-[1.5rem] bg-slate-900">
       {hasVideo ? (
-        <video 
-          ref={videoRef} 
-          autoPlay 
-          playsInline 
-          muted={muted} 
-          className={`absolute inset-0 w-full h-full object-cover ${mirrored ? 'scale-x-[-1]' : ''}`} 
-        />
+        <video ref={videoRef} autoPlay playsInline muted={muted} className={`absolute inset-0 h-full w-full object-cover ${mirrored ? 'scale-x-[-1]' : ''}`} />
       ) : (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-[radial-gradient(ellipse_at_center,#1e293b,#020617)] p-4">
-          <div className="relative">
-            <div className="absolute inset-0 bg-cyan-500/20 blur-xl rounded-full" />
-            <img 
-              src={fallbackAvatar} 
-              alt={title} 
-              className="relative h-16 w-16 md:h-24 md:w-24 rounded-full object-cover ring-2 ring-white/10 shadow-2xl" 
-            />
-          </div>
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-[radial-gradient(circle_at_top,#1e293b,#020617)] px-4 text-center">
+          <img src={fallbackAvatar} alt={title} className="h-20 w-20 rounded-full border border-white/10 object-cover shadow-2xl md:h-24 md:w-24" />
+          <div className="mt-4 text-lg font-semibold text-white">{title}</div>
+          <div className="text-sm text-slate-300">{subtitle}</div>
         </div>
       )}
-      {/* Name Tag Overlay */}
-      <div className="absolute bottom-0 inset-x-0 p-3 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none z-10">
-        <div className="text-xs md:text-sm font-medium text-white shadow-black drop-shadow-md truncate">{title}</div>
-        <div className="text-[10px] md:text-xs text-slate-300 drop-shadow-md truncate">{subtitle}</div>
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-4 text-white">
+        <div className="text-sm font-semibold">{title}</div>
+        <div className="text-xs text-slate-300">{subtitle}</div>
       </div>
     </div>
   );
 }
 
-function VoiceCallCard({ incomingCall, activeCallUser, remoteStream, callStatus, isMuted, acceptCall, declineCall, endCall, toggleMute }) {
-  const audioRef = useRef(null);
+const ActionButton = ({ active, danger, onClick, icon, label }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={`flex min-w-[72px] flex-col items-center gap-2 rounded-2xl border px-3 py-3 text-xs font-medium transition sm:min-w-[82px] ${danger ? 'border-rose-500/30 bg-rose-500 text-white hover:bg-rose-600' : active ? 'border-cyan-400/40 bg-cyan-400/15 text-cyan-100' : 'border-white/10 bg-white/5 text-slate-100 hover:bg-white/10'}`}
+  >
+    <span>{icon}</span>
+    <span>{label}</span>
+  </button>
+);
 
-  useEffect(() => {
-    if (audioRef.current) audioRef.current.srcObject = remoteStream || null;
-  }, [remoteStream]);
-
-  const subtitle = useMemo(() => {
-    if (incomingCall) return incomingCall.media?.video === false ? 'Incoming voice call' : 'Incoming video call';
-    if (callStatus === 'connected') return 'Connected in real time';
-    if (callStatus === 'reconnecting') return 'Reconnecting voice call...';
-    if (callStatus === 'calling') return 'Calling...';
-    if (callStatus === 'connecting') return 'Connecting secure media...';
-    return 'Preparing your call...';
-  }, [callStatus, incomingCall]);
-
-  if (!incomingCall && !activeCallUser) return <audio ref={audioRef} autoPlay playsInline />;
-
-  const avatar = incomingCall?.fromUser?.profilePicture || activeCallUser?.profilePicture || '/avatar.png';
-  const title = incomingCall ? `@${incomingCall.fromUser?.username || 'user'}` : `@${activeCallUser?.username || 'user'}`;
-
+function MissedCallsPanel({ missedCalls, clearMissedCalls }) {
+  if (!missedCalls.length) return null;
   return (
-    <div className="fixed inset-0 z-[120] bg-slate-950/95 backdrop-blur-2xl flex flex-col justify-between p-6 text-white overflow-hidden h-[100dvh]">
-      <audio ref={audioRef} autoPlay playsInline />
-      
-      {/* Background ambient glow based on avatar */}
-      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[120%] opacity-20 blur-[100px] pointer-events-none">
-        <img src={avatar} alt="glow" className="w-full h-full object-cover" />
+    <div className="fixed bottom-4 left-4 z-[121] w-[calc(100%-2rem)] max-w-sm rounded-3xl border border-amber-500/30 bg-slate-950/95 p-4 text-white shadow-2xl backdrop-blur-xl sm:w-96">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-amber-300">
+          <PhoneMissed size={18} />
+          <h4 className="font-semibold">Missed calls</h4>
+        </div>
+        <button type="button" onClick={clearMissedCalls} className="text-xs text-slate-400 transition hover:text-white">Clear</button>
       </div>
-
-      <div className="relative z-10 flex flex-col items-center text-center mt-16 md:mt-24 space-y-2">
-        <h2 className="text-xs md:text-sm font-semibold tracking-[0.2em] text-cyan-400 uppercase">{subtitle}</h2>
-        <h1 className="text-3xl md:text-5xl font-bold tracking-tight">{title}</h1>
+      <div className="max-h-64 space-y-2 overflow-auto pr-1">
+        {missedCalls.map((call) => (
+          <div key={call.id} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+            <div className="flex items-center gap-3">
+              <img src={call.fromUser?.profilePicture || '/avatar.png'} alt={call.fromUser?.username || 'User'} className="h-11 w-11 rounded-full object-cover" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-medium">@{call.fromUser?.username || 'user'}</div>
+                <div className="text-xs text-slate-300">{call.media?.video ? 'Video call' : 'Voice call'} • {formatMissedAt(call.createdAt)}</div>
+              </div>
+              <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-300">{call.reason}</span>
+            </div>
+          </div>
+        ))}
       </div>
+    </div>
+  );
+}
 
-      <div className="relative z-10 flex-1 flex items-center justify-center">
-        <div className="relative group">
-           {incomingCall && (
-             <>
-               <div className="absolute inset-0 rounded-full bg-cyan-500/30 animate-ping" />
-               <div className="absolute -inset-4 rounded-full border border-cyan-500/20 animate-pulse" />
-             </>
-           )}
-          <img 
-            src={avatar} 
-            alt="caller avatar" 
-            className="relative z-10 h-40 w-40 md:h-56 md:w-56 rounded-full object-cover shadow-2xl ring-4 ring-slate-800" 
-          />
+function IncomingCallView({ incomingCall, acceptCall, declineCall }) {
+  const avatar = incomingCall?.fromUser?.profilePicture || '/avatar.png';
+  return (
+    <div className="fixed inset-0 z-[120] flex min-h-[100dvh] items-center justify-center bg-slate-950/95 p-4 text-white backdrop-blur-2xl">
+      <div className="w-full max-w-lg rounded-[2rem] border border-white/10 bg-white/5 p-6 shadow-2xl">
+        <div className="mb-6 text-center">
+          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-xs uppercase tracking-[0.3em] text-cyan-200">
+            <Radio size={14} /> Incoming {incomingCall?.media?.video ? 'video' : 'voice'} call
+          </div>
+          <img src={avatar} alt={incomingCall?.fromUser?.username} className="mx-auto mt-5 h-24 w-24 rounded-full object-cover ring-4 ring-white/10 sm:h-28 sm:w-28" />
+          <h2 className="mt-4 text-3xl font-bold">@{incomingCall?.fromUser?.username || 'user'}</h2>
+          <p className="mt-2 text-sm text-slate-300">Answer to start a crystal-clear {incomingCall?.media?.video ? 'video' : 'voice'} call.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <ActionButton danger onClick={declineCall} icon={<PhoneOff size={20} />} label="Decline" />
+          <ActionButton active onClick={acceptCall} icon={incomingCall?.media?.video ? <Video size={20} /> : <Phone size={20} />} label="Accept" />
         </div>
       </div>
+    </div>
+  );
+}
 
-      <div className="relative z-10 flex flex-col items-center pb-12">
-        <div className="flex items-center gap-6 md:gap-10">
+function VoiceCallView({ activeCallUser, remoteStream, callStatus, isMuted, acceptCall, declineCall, endCall, toggleMute, incomingCall }) {
+  const audioRef = useRef(null);
+  useEffect(() => { if (audioRef.current) audioRef.current.srcObject = remoteStream || null; }, [remoteStream]);
+  const subtitle = useMemo(() => {
+    if (incomingCall) return 'Incoming voice call';
+    if (callStatus === 'connected') return 'Connected';
+    if (callStatus === 'reconnecting') return 'Reconnecting';
+    if (callStatus === 'calling') return 'Calling';
+    return 'Connecting';
+  }, [callStatus, incomingCall]);
+  const avatar = incomingCall?.fromUser?.profilePicture || activeCallUser?.profilePicture || '/avatar.png';
+  const username = incomingCall?.fromUser?.username || activeCallUser?.username || 'user';
+  return (
+    <div className="fixed inset-0 z-[120] flex min-h-[100dvh] items-center justify-center bg-slate-950/95 p-4 text-white backdrop-blur-2xl">
+      <audio ref={audioRef} autoPlay playsInline />
+      <div className="w-full max-w-md rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.95),rgba(2,6,23,0.95))] p-6 shadow-2xl">
+        <div className="text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs uppercase tracking-[0.3em] text-slate-300">{subtitle}</div>
+          <img src={avatar} alt={username} className="mx-auto mt-6 h-24 w-24 rounded-full object-cover ring-4 ring-white/10" />
+          <h2 className="mt-4 text-3xl font-bold">@{username}</h2>
+          <p className="mt-2 text-sm text-slate-300">Voice-first layout with reliable microphone controls.</p>
+        </div>
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
           {incomingCall ? (
             <>
-              <button onClick={declineCall} className="flex flex-col items-center gap-3 group">
-                <div className="h-16 w-16 md:h-20 md:w-20 rounded-full bg-rose-500 flex items-center justify-center text-white shadow-lg shadow-rose-500/20 transition-transform group-hover:scale-110">
-                  <PhoneOff size={28} />
-                </div>
-                <span className="text-xs font-medium text-slate-300">Decline</span>
-              </button>
-              <button onClick={acceptCall} className="flex flex-col items-center gap-3 group">
-                <div className="h-16 w-16 md:h-20 md:w-20 rounded-full bg-emerald-500 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20 transition-transform group-hover:scale-110 animate-bounce">
-                  <Phone size={28} />
-                </div>
-                <span className="text-xs font-medium text-slate-300">Accept</span>
-              </button>
+              <ActionButton danger onClick={declineCall} icon={<PhoneOff size={20} />} label="Decline" />
+              <ActionButton active onClick={acceptCall} icon={<Phone size={20} />} label="Accept" />
             </>
           ) : (
             <>
-              <button onClick={toggleMute} className="flex flex-col items-center gap-3 group">
-                <div className={`h-16 w-16 rounded-full flex items-center justify-center transition-all ${isMuted ? 'bg-rose-500/20 text-rose-500 ring-2 ring-rose-500/50' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>
-                  {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
-                </div>
-                <span className="text-xs font-medium text-slate-400">{isMuted ? 'Muted' : 'Mute'}</span>
-              </button>
-              <button onClick={endCall} className="flex flex-col items-center gap-3 group">
-                <div className="h-16 w-16 rounded-full bg-rose-500 flex items-center justify-center text-white shadow-lg shadow-rose-500/20 transition-transform group-hover:scale-110">
-                  <PhoneOff size={24} />
-                </div>
-                <span className="text-xs font-medium text-slate-400">End Call</span>
-              </button>
+              <ActionButton active={isMuted} onClick={toggleMute} icon={isMuted ? <MicOff size={20} /> : <Mic size={20} />} label={isMuted ? 'Unmute' : 'Mute'} />
+              <ActionButton danger onClick={endCall} icon={<PhoneOff size={20} />} label="End call" />
             </>
           )}
         </div>
@@ -217,192 +215,133 @@ function CallLayer() {
     isMuted,
     isCameraEnabled,
     isScreenSharing,
+    isRecording,
+    recordingSeconds,
+    recordingUrl,
     remoteMediaState,
     remoteLocation,
     collaborativePaths,
     localDrawStroke,
+    missedCalls,
     acceptCall,
     declineCall,
     endCall,
     toggleMute,
     toggleCamera,
     toggleScreenShare,
+    toggleRecording,
     shareLocationInCall,
     startStroke,
     extendStroke,
     finishStroke,
     clearDrawings,
+    clearMissedCalls,
   } = useCallStore();
   const authUser = useAuthStore((state) => state.authUser);
 
   const effectiveMode = incomingCall?.media?.video ? 'video' : activeCallUser ? callMode : 'voice';
   const isVideoCall = effectiveMode === 'video';
+  const peerUser = incomingCall?.fromUser || activeCallUser;
+  const avatar = peerUser?.profilePicture || '/avatar.png';
+  const title = `@${peerUser?.username || 'user'}`;
+  const remoteSubtitle = useMemo(() => {
+    if (callStatus === 'connected') return remoteMediaState.isScreenSharing ? 'Sharing screen' : remoteMediaState.isCameraEnabled ? 'Live camera' : 'Audio only';
+    if (callStatus === 'calling') return 'Ringing';
+    if (callStatus === 'reconnecting') return 'Reconnecting';
+    return 'Preparing media';
+  }, [callStatus, remoteMediaState.isCameraEnabled, remoteMediaState.isScreenSharing]);
 
-  const subtitle = useMemo(() => {
-    if (incomingCall) return 'Incoming video call';
-    if (callStatus === 'connected') return isScreenSharing ? 'Connected with screen sharing' : 'Connected in real time';
-    if (callStatus === 'reconnecting') return 'Reconnecting your video call...';
-    if (callStatus === 'calling') return 'Calling...';
-    return 'Connecting media...';
-  }, [callStatus, incomingCall, isScreenSharing]);
+  if (!incomingCall && !activeCallUser) return <MissedCallsPanel missedCalls={missedCalls} clearMissedCalls={clearMissedCalls} />;
+  if (incomingCall && isVideoCall) return <><IncomingCallView incomingCall={incomingCall} acceptCall={acceptCall} declineCall={declineCall} /><MissedCallsPanel missedCalls={missedCalls} clearMissedCalls={clearMissedCalls} /></>;
+  if (!isVideoCall) return <><VoiceCallView incomingCall={incomingCall} activeCallUser={activeCallUser} remoteStream={remoteStream} callStatus={callStatus} isMuted={isMuted} acceptCall={acceptCall} declineCall={declineCall} endCall={endCall} toggleMute={toggleMute} /><MissedCallsPanel missedCalls={missedCalls} clearMissedCalls={clearMissedCalls} /></>;
 
-  if (!incomingCall && !activeCallUser) return null;
-
-  if (!isVideoCall) {
-    return (
-      <VoiceCallCard
-        incomingCall={incomingCall}
-        activeCallUser={activeCallUser}
-        remoteStream={remoteStream}
-        callStatus={callStatus}
-        isMuted={isMuted}
-        acceptCall={acceptCall}
-        declineCall={declineCall}
-        endCall={endCall}
-        toggleMute={toggleMute}
-      />
-    );
-  }
-
-  const avatar = incomingCall?.fromUser?.profilePicture || activeCallUser?.profilePicture || '/avatar.png';
-  const title = incomingCall ? `@${incomingCall.fromUser?.username || 'user'}` : `@${activeCallUser?.username || 'user'}`;
-
-  // INCOMING VIDEO CALL STATE
-  if (incomingCall) {
-    return (
-      <div className="fixed inset-0 z-[120] bg-slate-950/95 backdrop-blur-2xl flex flex-col justify-between items-center py-20 px-6 h-[100dvh]">
-        <div className="text-center space-y-2 mt-10">
-          <h2 className="text-sm font-semibold tracking-widest text-cyan-400 uppercase">Incoming Video Call</h2>
-          <h1 className="text-4xl md:text-5xl font-bold text-white">{title}</h1>
-        </div>
-        <div className="relative">
-          <div className="absolute inset-0 rounded-[2rem] bg-cyan-500/20 animate-ping" />
-          <img src={avatar} alt="caller" className="relative z-10 h-48 w-48 md:h-64 md:w-64 rounded-[2rem] object-cover shadow-2xl ring-4 ring-slate-800" />
-        </div>
-        <div className="flex gap-8 md:gap-12 pb-10">
-          <button type="button" onClick={declineCall} className="group flex flex-col items-center gap-3">
-            <div className="h-16 w-16 md:h-20 md:w-20 rounded-full bg-rose-500 flex items-center justify-center text-white transition group-hover:scale-110 shadow-lg shadow-rose-500/20"><PhoneOff size={28} /></div>
-            <span className="text-sm font-medium text-slate-300">Decline</span>
-          </button>
-          <button type="button" onClick={acceptCall} className="group flex flex-col items-center gap-3">
-            <div className="h-16 w-16 md:h-20 md:w-20 rounded-full bg-emerald-500 flex items-center justify-center text-white transition group-hover:scale-110 shadow-lg shadow-emerald-500/20 animate-bounce"><Video size={28} /></div>
-            <span className="text-sm font-medium text-slate-300">Accept</span>
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // CONNECTED VIDEO CALL STATE
   return (
-    <div className="fixed inset-0 z-[120] bg-slate-950 text-slate-100 flex flex-col overflow-hidden h-[100dvh]">
-      
-      {/* Main Layout Flex Container */}
-      <div className="flex-1 flex flex-col lg:flex-row p-2 md:p-4 gap-2 md:gap-4 relative pb-20 lg:pb-4">
-        
-        {/* PRIMARY VIEW: Remote Stream */}
-        <div className="flex-1 relative rounded-[1.5rem] lg:rounded-[2rem] overflow-hidden bg-black border border-white/10 shadow-2xl flex flex-col group">
-          <div className="absolute inset-0 z-0">
-            <VideoSurface
-              stream={remoteStream}
-              fallbackAvatar={avatar}
-              title={``} // Intentionally blank as we use the custom overlay header
-              subtitle={``}
-            />
-          </div>
-
-          <div className="absolute inset-0 z-10 pointer-events-auto">
-             <DrawingCanvas
-               strokes={collaborativePaths}
-               draftStroke={localDrawStroke}
-               onPointerDown={(point) => isAnnotating && startStroke(point)}
-               onPointerMove={(point) => isAnnotating && extendStroke(point)}
-               onPointerUp={() => isAnnotating && finishStroke()}
-             />
-          </div>
-
-          {/* Floating Caller Info Header */}
-          <div className="absolute top-0 inset-x-0 p-4 bg-gradient-to-b from-black/80 via-black/40 to-transparent z-20 flex justify-between items-start pointer-events-none transition-opacity duration-300">
-             <div className="pointer-events-auto flex items-center gap-3">
-                <img src={avatar} alt="avatar" className="w-10 h-10 md:w-12 md:h-12 rounded-full ring-2 ring-white/20 object-cover shadow-lg" />
-                <div className="drop-shadow-md">
-                  <h2 className="text-sm md:text-base font-semibold leading-tight">{title}</h2>
-                  <p className="text-[10px] md:text-xs text-slate-300">
-                    {remoteMediaState.isScreenSharing ? 'Sharing screen' : remoteMediaState.isCameraEnabled ? 'Camera on' : 'Audio only'} • {subtitle}
-                  </p>
+    <>
+      <div className="fixed inset-0 z-[120] min-h-[100dvh] overflow-hidden bg-slate-950 text-white">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,#0f172a,#020617_70%)]" />
+        <div className="relative flex h-[100dvh] flex-col p-3 sm:p-4 lg:p-6">
+          <div className="grid flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
+            <section className="relative min-h-[42vh] overflow-hidden rounded-[2rem] border border-white/10 bg-black shadow-2xl lg:min-h-0">
+              <VideoSurface stream={remoteStream} fallbackAvatar={avatar} title={title} subtitle={remoteSubtitle} />
+              <DrawingCanvas
+                strokes={collaborativePaths}
+                draftStroke={localDrawStroke}
+                onPointerDown={(point) => isAnnotating && startStroke(point)}
+                onPointerMove={(point) => isAnnotating && extendStroke(point)}
+                onPointerUp={() => isAnnotating && finishStroke()}
+              />
+              <div className="absolute left-4 top-4 right-4 z-20 flex flex-wrap items-start justify-between gap-3">
+                <div className="rounded-2xl border border-white/10 bg-black/35 px-4 py-3 backdrop-blur-md">
+                  <div className="text-lg font-semibold">{title}</div>
+                  <div className="text-sm text-slate-300">{callStatus === 'connected' ? 'Connected call' : remoteSubtitle}</div>
                 </div>
-             </div>
-             {remoteLocation && (
-               <a href={`https://www.google.com/maps?q=${remoteLocation.lat},${remoteLocation.lng}`} target="_blank" rel="noopener noreferrer" 
-                  className="pointer-events-auto hidden md:flex items-center gap-1.5 bg-black/40 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-full text-xs font-medium hover:bg-black/60 transition shadow-lg">
-                  <MapPin size={14} className="text-amber-400" /> View Map
-               </a>
-             )}
-          </div>
-        </div>
+                <div className="flex flex-wrap gap-2">
+                  {isRecording && <div className="inline-flex items-center gap-2 rounded-full bg-rose-500 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em]"><CircleDot size={14} /> Recording {formatDuration(recordingSeconds)}</div>}
+                  {remoteMediaState.isRecording && <div className="inline-flex items-center gap-2 rounded-full bg-amber-500/90 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-950"><CircleDot size={14} /> They&apos;re recording</div>}
+                  {remoteLocation && (
+                    <a href={`https://www.google.com/maps?q=${remoteLocation.lat},${remoteLocation.lng}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/35 px-3 py-1 text-xs text-slate-100 backdrop-blur-md">
+                      <MapPin size={14} /> Open shared location
+                    </a>
+                  )}
+                </div>
+              </div>
+            </section>
 
-        {/* SIDEBAR / MOBILE DOCK: Local Video & Collab Tools */}
-        <div className="w-full lg:w-[320px] shrink-0 flex flex-row lg:flex-col gap-2 md:gap-4 z-20 relative">
-          
-          {/* Local Preview Camera (PiP on mobile, Full block on desktop) */}
-          <div className="w-24 md:w-32 lg:w-full aspect-[3/4] lg:aspect-video rounded-xl md:rounded-[1.5rem] overflow-hidden border border-white/10 bg-slate-800 shadow-xl relative shrink-0">
-             <VideoSurface
-               stream={previewStream}
-               fallbackAvatar={authUser?.profilePicture || '/avatar.png'}
-               title="You"
-               subtitle={isScreenSharing ? 'Sharing screen' : isCameraEnabled ? 'Camera on' : 'Off'}
-               muted
-               mirrored={!isScreenSharing}
-             />
-          </div>
+            <aside className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:grid-cols-1 lg:grid-rows-[auto_auto_1fr]">
+              <div className="order-2 rounded-[2rem] border border-white/10 bg-white/5 p-3 backdrop-blur-xl sm:order-1">
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold">Your preview</div>
+                    <div className="text-xs text-slate-400">{isScreenSharing ? 'Sharing your screen' : isCameraEnabled ? 'Camera ready' : 'Camera off'}</div>
+                  </div>
+                  {recordingUrl && (
+                    <a href={recordingUrl} download="call-recording.webm" className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-1 text-xs text-slate-200 transition hover:bg-white/10"><Download size={14} /> Download</a>
+                  )}
+                </div>
+                <div className="aspect-[4/3] overflow-hidden rounded-[1.5rem] border border-white/10 bg-slate-900">
+                  <VideoSurface stream={previewStream} fallbackAvatar={authUser?.profilePicture || '/avatar.png'} title="You" subtitle={isRecording ? `Recording ${formatDuration(recordingSeconds)}` : 'Local preview'} muted mirrored={!isScreenSharing} />
+                </div>
+              </div>
 
-          {/* Collaboration Tools (Scrollable Row on Mobile, Grid on Desktop) */}
-          <div className="flex-1 lg:flex-none flex flex-row lg:flex-col gap-2 bg-slate-900/60 backdrop-blur-lg rounded-xl md:rounded-[1.5rem] p-2 md:p-4 border border-white/10 overflow-x-auto lg:overflow-visible items-center lg:items-stretch shadow-xl" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-             <div className="hidden lg:block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Collaboration</div>
-             
-             <div className="flex lg:grid lg:grid-cols-2 gap-2 min-w-max lg:min-w-full">
-               <button type="button" onClick={toggleScreenShare} className={`flex flex-col lg:flex-row items-center lg:justify-start gap-1 lg:gap-3 p-3 w-20 lg:w-auto rounded-xl border transition ${isScreenSharing ? 'border-cyan-500/50 bg-cyan-500/10' : 'border-white/5 bg-white/5 hover:bg-white/10'}`}>
-                 <MonitorUp size={18} className={isScreenSharing ? 'text-cyan-400' : 'text-slate-300'} />
-                 <span className="text-[10px] lg:text-xs font-medium text-slate-200">Share</span>
-               </button>
-               
-               <button type="button" onClick={shareLocationInCall} className="flex flex-col lg:flex-row items-center lg:justify-start gap-1 lg:gap-3 p-3 w-20 lg:w-auto rounded-xl border border-white/5 bg-white/5 hover:bg-white/10 transition">
-                 <MapPin size={18} className="text-amber-400" />
-                 <span className="text-[10px] lg:text-xs font-medium text-slate-200">Location</span>
-               </button>
-               
-               <button type="button" onClick={() => setIsAnnotating((val) => !val)} className={`flex flex-col lg:flex-row items-center lg:justify-start gap-1 lg:gap-3 p-3 w-20 lg:w-auto rounded-xl border transition ${isAnnotating ? 'border-cyan-400/50 bg-cyan-400/20' : 'border-white/5 bg-white/5 hover:bg-white/10'}`}>
-                 <Video size={18} className={isAnnotating ? 'text-cyan-400' : 'text-slate-300'} />
-                 <span className="text-[10px] lg:text-xs font-medium text-slate-200">{isAnnotating ? 'Drawing' : 'Draw'}</span>
-               </button>
-               
-               <button type="button" onClick={clearDrawings} className="flex flex-col lg:flex-row items-center lg:justify-start gap-1 lg:gap-3 p-3 w-20 lg:w-auto rounded-xl border border-white/5 bg-white/5 hover:bg-white/10 transition">
-                 <Eraser size={18} className="text-rose-400" />
-                 <span className="text-[10px] lg:text-xs font-medium text-slate-200">Clear</span>
-               </button>
-             </div>
+              <div className="order-1 rounded-[2rem] border border-white/10 bg-white/5 p-4 backdrop-blur-xl sm:order-2">
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold">Call tools</div>
+                    <div className="text-xs text-slate-400">Optimized for phones, tablets, and desktop.</div>
+                  </div>
+                  <div className="rounded-full border border-white/10 px-3 py-1 text-xs text-slate-300">{callStatus}</div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-2">
+                  <ActionButton active={isMuted} onClick={toggleMute} icon={isMuted ? <MicOff size={20} /> : <Mic size={20} />} label={isMuted ? 'Unmute' : 'Mute'} />
+                  <ActionButton active={!isCameraEnabled} onClick={toggleCamera} icon={isCameraEnabled ? <Camera size={20} /> : <CameraOff size={20} />} label={isCameraEnabled ? 'Camera on' : 'Camera off'} />
+                  <ActionButton active={isScreenSharing} onClick={toggleScreenShare} icon={<MonitorUp size={20} />} label="Share screen" />
+                  <ActionButton active={isAnnotating} onClick={() => setIsAnnotating((value) => !value)} icon={<Video size={20} />} label={isAnnotating ? 'Drawing on' : 'Draw'} />
+                  <ActionButton active={isRecording} onClick={toggleRecording} icon={<CircleDot size={20} />} label={isRecording ? 'Stop rec' : 'Record'} />
+                  <ActionButton onClick={shareLocationInCall} icon={<MapPin size={20} />} label="Send pin" />
+                  <ActionButton onClick={clearDrawings} icon={<Eraser size={20} />} label="Clear draw" />
+                  <ActionButton danger onClick={endCall} icon={<PhoneOff size={20} />} label="End call" />
+                </div>
+              </div>
+
+              <div className="order-3 rounded-[2rem] border border-white/10 bg-white/5 p-4 backdrop-blur-xl">
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold">Live status</div>
+                    <div className="text-xs text-slate-400">Know exactly what each side is sending.</div>
+                  </div>
+                </div>
+                <div className="grid gap-2 text-sm text-slate-200">
+                  <div className="flex items-center justify-between rounded-2xl bg-black/20 px-3 py-2"><span>You</span><span>{isMuted ? 'Muted' : 'Mic on'} • {isCameraEnabled ? 'Camera on' : 'Camera off'}</span></div>
+                  <div className="flex items-center justify-between rounded-2xl bg-black/20 px-3 py-2"><span>{title}</span><span>{remoteMediaState.isMuted ? 'Muted' : 'Mic on'} • {remoteMediaState.isCameraEnabled ? 'Camera on' : 'Camera off'}</span></div>
+                  <div className="rounded-2xl bg-black/20 px-3 py-2 text-xs text-slate-300">Responsive stacked layout on small screens, dual-panel layout on larger screens, and dedicated action clusters for easier thumbs-only control.</div>
+                </div>
+              </div>
+            </aside>
           </div>
         </div>
       </div>
-
-      {/* FLOATING MAIN CONTROLS */}
-      <div className="absolute bottom-4 lg:bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2 md:gap-4 bg-slate-800/80 backdrop-blur-2xl px-4 py-3 rounded-full border border-white/10 shadow-[0_10px_40px_rgba(0,0,0,0.5)] z-30">
-        <button type="button" onClick={toggleMute} className={`p-3 md:p-4 rounded-full transition-all ${isMuted ? 'bg-rose-500/20 text-rose-500' : 'bg-white/10 text-white hover:bg-white/20'}`}>
-          {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
-        </button>
-        
-        <button type="button" onClick={toggleCamera} className={`p-3 md:p-4 rounded-full transition-all ${isCameraEnabled ? 'bg-white/10 text-white hover:bg-white/20' : 'bg-rose-500/20 text-rose-500'}`}>
-          {isCameraEnabled ? <Camera size={20} /> : <CameraOff size={20} />}
-        </button>
-        
-        <div className="w-px h-8 bg-white/10 mx-1 md:mx-2" />
-        
-        <button type="button" onClick={endCall} className="p-3 md:p-4 rounded-full bg-rose-500 text-white hover:bg-rose-600 transition shadow-lg shadow-rose-500/20">
-          <PhoneOff size={20} />
-        </button>
-      </div>
-      
-    </div>
+      <MissedCallsPanel missedCalls={missedCalls} clearMissedCalls={clearMissedCalls} />
+    </>
   );
 }
 

@@ -48,8 +48,26 @@ const buildCallSession = ({ callerId, calleeId, media }) => {
 };
 
 const removeCallSession = (sessionId) => {
-  if (!sessionId) return;
+  if (!sessionId) return null;
+  const session = callSessionMap.get(sessionId) || null;
   callSessionMap.delete(sessionId);
+  return session;
+};
+
+const emitMissedCall = async ({ session, recipientUserId, reason = 'missed' }) => {
+  if (!session || !recipientUserId) return;
+  const recipientSocketId = getReceiverSocketId(recipientUserId);
+  if (!recipientSocketId) return;
+  const otherUserId = getOtherParticipantId(session, recipientUserId);
+  const otherUser = await loadCallPeer(otherUserId);
+  io.to(recipientSocketId).emit('call:missed', {
+    id: crypto.randomUUID(),
+    sessionId: session.id,
+    reason,
+    media: session.media,
+    createdAt: Date.now(),
+    fromUser: otherUser,
+  });
 };
 
 const getOtherParticipantId = (session, userId) => session?.participants.find((participantId) => participantId !== userId?.toString()) || null;
@@ -343,10 +361,15 @@ io.on('connection', async (socket) => {
     }
   });
 
-  socket.on('call:start', ({ toUserId, media }) => {
+  socket.on('call:start', async ({ toUserId, media }) => {
     if (!toUserId || toUserId === userId) return;
-    if (findCallSessionByUserId(userId) || findCallSessionByUserId(toUserId)) {
+    const callerSession = findCallSessionByUserId(userId);
+    const receiverSession = findCallSessionByUserId(toUserId);
+    if (callerSession || receiverSession) {
       socket.emit('call:unavailable', { toUserId, reason: 'busy' });
+      if (receiverSession && receiverSession.status === 'ringing') {
+        await emitMissedCall({ session: receiverSession, recipientUserId: receiverSession.calleeId, reason: 'busy' });
+      }
       return;
     }
 
@@ -381,11 +404,14 @@ io.on('connection', async (socket) => {
     }
   });
 
-  socket.on('call:decline', ({ toUserId, sessionId }) => {
+  socket.on('call:decline', async ({ toUserId, sessionId }) => {
     const session = callSessionMap.get(sessionId) || findCallSessionByUserId(userId);
-    if (session) removeCallSession(session.id);
+    const removedSession = session ? removeCallSession(session.id) : null;
     const receiverSocketId = getReceiverSocketId(toUserId);
     if (receiverSocketId) io.to(receiverSocketId).emit('call:declined', { fromUserId: userId });
+    if (removedSession?.status === 'ringing') {
+      await emitMissedCall({ session: removedSession, recipientUserId: userId === removedSession.callerId ? removedSession.calleeId : removedSession.callerId, reason: 'declined' });
+    }
   });
 
   socket.on('call:end', ({ toUserId, sessionId }) => {
@@ -448,6 +474,18 @@ io.on('connection', async (socket) => {
   });
 
   socket.on('disconnect', async () => {
+    const activeCall = findCallSessionByUserId(userId);
+    if (activeCall) {
+      const otherUserId = getOtherParticipantId(activeCall, userId);
+      const otherSocketId = getReceiverSocketId(otherUserId);
+      if (activeCall.status === 'ringing') {
+        await emitMissedCall({ session: activeCall, recipientUserId: otherUserId, reason: 'missed' });
+      }
+      removeCallSession(activeCall.id);
+      if (otherSocketId) {
+        io.to(otherSocketId).emit(activeCall.status === 'active' ? 'call:ended' : 'call:declined', { fromUserId: userId });
+      }
+    }
     await updateUserLastSeen(userId);
     delete userSocketMap[userId];
     emitPresence();
