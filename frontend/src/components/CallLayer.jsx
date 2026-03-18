@@ -93,8 +93,11 @@ const DrawingCanvas = ({ strokes, draftStroke, onPointerDown, onPointerMove, onP
 
 function VideoSurface({ stream, muted = false, mirrored = false, fallbackAvatar, title, subtitle }) {
   const videoRef = useRef(null);
-  useEffect(() => { if (videoRef.current) videoRef.current.srcObject = stream || null; }, [stream]);
-  const hasVideo = Boolean(stream?.getVideoTracks?.().some((track) => track.readyState === 'live' && track.enabled));
+  const attachStreamToElement = useCallStore((state) => state.attachStreamToElement);
+  useEffect(() => {
+    attachStreamToElement(videoRef.current, stream, { muted });
+  }, [attachStreamToElement, muted, stream]);
+  const hasVideo = Boolean(stream?.getVideoTracks?.().some((track) => track.readyState === 'live'));
 
   return (
     <div className="relative h-full w-full overflow-hidden rounded-[1.5rem] bg-slate-900">
@@ -117,9 +120,10 @@ function VideoSurface({ stream, muted = false, mirrored = false, fallbackAvatar,
 
 function RemoteAudio({ stream }) {
   const audioRef = useRef(null);
+  const attachStreamToElement = useCallStore((state) => state.attachStreamToElement);
   useEffect(() => {
-    if (audioRef.current) audioRef.current.srcObject = stream || null;
-  }, [stream]);
+    attachStreamToElement(audioRef.current, stream);
+  }, [attachStreamToElement, stream]);
 
   return <audio ref={audioRef} autoPlay playsInline />;
 }
@@ -188,7 +192,10 @@ function IncomingCallView({ incomingCall, acceptCall, declineCall }) {
 
 function VoiceCallView({ activeCallUser, remoteStream, callStatus, isMuted, acceptCall, declineCall, endCall, toggleMute, incomingCall }) {
   const audioRef = useRef(null);
-  useEffect(() => { if (audioRef.current) audioRef.current.srcObject = remoteStream || null; }, [remoteStream]);
+  const attachStreamToElement = useCallStore((state) => state.attachStreamToElement);
+  useEffect(() => {
+    attachStreamToElement(audioRef.current, remoteStream);
+  }, [attachStreamToElement, remoteStream]);
   const subtitle = useMemo(() => {
     if (incomingCall) return 'Incoming voice call';
     if (callStatus === 'connected') return 'Connected';
@@ -247,6 +254,8 @@ function CallLayer() {
     collaborativePaths,
     localDrawStroke,
     missedCalls,
+    connectionQuality,
+    getConnectionLabel,
     acceptCall,
     declineCall,
     endCall,
@@ -268,12 +277,16 @@ function CallLayer() {
   const peerUser = incomingCall?.fromUser || activeCallUser;
   const avatar = peerUser?.profilePicture || '/avatar.png';
   const title = `@${peerUser?.username || 'user'}`;
+  const connectionLabel = getConnectionLabel();
   const remoteSubtitle = useMemo(() => {
-    if (callStatus === 'connected') return remoteMediaState.isScreenSharing ? 'Sharing screen' : remoteMediaState.isCameraEnabled ? 'Live camera' : 'Audio only';
+    if (callStatus === 'connected') {
+      if (connectionQuality === 'unstable') return 'Unstable connection';
+      return remoteMediaState.isScreenSharing ? 'Sharing screen' : remoteMediaState.isCameraEnabled ? 'Live camera' : 'Audio only';
+    }
     if (callStatus === 'calling') return 'Ringing';
     if (callStatus === 'reconnecting') return 'Reconnecting';
     return 'Preparing media';
-  }, [callStatus, remoteMediaState.isCameraEnabled, remoteMediaState.isScreenSharing]);
+  }, [callStatus, connectionQuality, remoteMediaState.isCameraEnabled, remoteMediaState.isScreenSharing]);
 
   if (!incomingCall && !activeCallUser) return <MissedCallsPanel missedCalls={missedCalls} clearMissedCalls={clearMissedCalls} />;
   if (incomingCall && isVideoCall) return <><IncomingCallView incomingCall={incomingCall} acceptCall={acceptCall} declineCall={declineCall} /><MissedCallsPanel missedCalls={missedCalls} clearMissedCalls={clearMissedCalls} /></>;
@@ -294,10 +307,10 @@ function CallLayer() {
 
   return (
     <>
-      <div className="fixed inset-0 z-[120] min-h-[100dvh] overflow-hidden bg-slate-950 text-white">
+      <div className="fixed inset-0 z-[120] min-h-[100dvh] overflow-x-hidden overflow-y-auto bg-slate-950 text-white">
         <RemoteAudio stream={remoteStream} />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,#0f172a,#020617_70%)]" />
-        <div className="relative h-[100dvh]">
+        <div className="relative min-h-[100dvh]">
           {isMobileViewport ? (
             <div className="flex h-full flex-col px-3 pb-4 pt-3">
               <section className="relative min-h-0 flex-1 overflow-hidden rounded-[2rem] border border-white/10 bg-black shadow-2xl">
@@ -312,7 +325,7 @@ function CallLayer() {
                 <div className="absolute inset-x-3 top-3 z-20 flex items-start justify-between gap-3">
                   <div className="max-w-[70%] rounded-3xl border border-white/10 bg-black/40 px-4 py-3 backdrop-blur-md">
                     <div className="text-base font-semibold">{title}</div>
-                    <div className="text-xs text-slate-300">{callStatus === 'connected' ? 'Connected call' : remoteSubtitle}</div>
+                    <div className="text-xs text-slate-300">{connectionLabel}</div>
                   </div>
                   <div className="aspect-[3/4] w-24 overflow-hidden rounded-[1.4rem] border border-white/10 bg-slate-900 shadow-xl">
                     <VideoSurface stream={previewStream} fallbackAvatar={authUser?.profilePicture || '/avatar.png'} title="You" subtitle={isScreenSharing ? 'Screen' : 'Preview'} muted mirrored={!isScreenSharing} />
@@ -320,7 +333,7 @@ function CallLayer() {
                 </div>
                 <div className="absolute inset-x-3 bottom-3 z-20 space-y-3">
                   <div className="flex flex-wrap gap-2">
-                    <div className="rounded-full border border-white/10 bg-black/40 px-3 py-1 text-xs text-slate-100 backdrop-blur-md">{callStatus}</div>
+                    <div className="rounded-full border border-white/10 bg-black/40 px-3 py-1 text-xs text-slate-100 backdrop-blur-md">{connectionLabel}</div>
                     {isRecording && <div className="inline-flex items-center gap-2 rounded-full bg-rose-500 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em]"><CircleDot size={14} /> {formatDuration(recordingSeconds)}</div>}
                     {remoteMediaState.isRecording && <div className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-3 py-1 text-xs font-semibold text-slate-950"><CircleDot size={14} /> Recording</div>}
                     {remoteLocation && <a href={`https://www.google.com/maps?q=${remoteLocation.lat},${remoteLocation.lng}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1 text-xs text-slate-100 backdrop-blur-md"><MapPin size={14} /> Location</a>}
@@ -353,7 +366,7 @@ function CallLayer() {
                   <div className="absolute left-5 right-5 top-5 z-20 flex items-start justify-between gap-4">
                     <div className="rounded-[1.8rem] border border-white/10 bg-black/35 px-5 py-4 backdrop-blur-md">
                       <div className="text-xl font-semibold">{title}</div>
-                      <div className="text-sm text-slate-300">{callStatus === 'connected' ? 'Connected call' : remoteSubtitle}</div>
+                      <div className="text-sm text-slate-300">{connectionLabel}</div>
                     </div>
                     <div className="flex flex-wrap justify-end gap-2">
                       {isRecording && <div className="inline-flex items-center gap-2 rounded-full bg-rose-500 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em]"><CircleDot size={14} /> Recording {formatDuration(recordingSeconds)}</div>}
@@ -383,7 +396,7 @@ function CallLayer() {
                         <div className="text-sm font-semibold">Call tools</div>
                         <div className="text-xs text-slate-400">Desktop command center for video calling.</div>
                       </div>
-                      <div className="rounded-full border border-white/10 px-3 py-1 text-xs text-slate-300">{callStatus}</div>
+                      <div className="rounded-full border border-white/10 px-3 py-1 text-xs text-slate-300">{connectionLabel}</div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       {renderToolButtons(false)}

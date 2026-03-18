@@ -82,6 +82,12 @@ const emitMissedCall = async ({ session, recipientUserId, reason = 'missed' }) =
   });
 };
 
+const emitPeerCallStatus = ({ recipientUserId, status, sessionId }) => {
+  const recipientSocketId = getReceiverSocketId(recipientUserId);
+  if (!recipientSocketId) return;
+  io.to(recipientSocketId).emit('call:peer-status', { status, sessionId });
+};
+
 const getOtherParticipantId = (session, userId) => session?.participants.find((participantId) => participantId !== userId?.toString()) || null;
 
 const loadCallPeer = async (userId) => {
@@ -94,7 +100,11 @@ const emitCallResumeIfNeeded = async (socket, userId) => {
   const session = findCallSessionByUserId(userId);
   if (!session) return;
   clearCallDisconnectTimer(userId);
-  if (session.status === 'reconnecting') session.status = 'active';
+  if (session.status === 'reconnecting') {
+    session.status = 'active';
+    const otherUserId = getOtherParticipantId(session, userId);
+    emitPeerCallStatus({ recipientUserId: otherUserId, status: 'connected', sessionId: session.id });
+  }
   const otherUserId = getOtherParticipantId(session, userId);
   const otherUser = await loadCallPeer(otherUserId);
   if (!otherUser) return;
@@ -456,6 +466,18 @@ io.on('connection', async (socket) => {
     });
   });
 
+  socket.on('call:aux', ({ toUserId, sessionId, payload }) => {
+    const session = callSessionMap.get(sessionId) || findCallSessionByUserId(userId);
+    if (!session || !session.participants.includes(toUserId?.toString())) return;
+    const receiverSocketId = getReceiverSocketId(toUserId);
+    if (!receiverSocketId) return;
+    io.to(receiverSocketId).emit('call:aux', {
+      sessionId: session.id,
+      fromUserId: userId,
+      payload,
+    });
+  });
+
   socket.on('call:resume:request', async () => {
     await emitCallResumeIfNeeded(socket, userId);
   });
@@ -506,6 +528,7 @@ io.on('connection', async (socket) => {
         if (otherSocketId) io.to(otherSocketId).emit('call:declined', { fromUserId: userId });
       } else if (activeCall.status === 'active') {
         activeCall.status = 'reconnecting';
+        emitPeerCallStatus({ recipientUserId: otherUserId, status: 'inactive', sessionId: activeCall.id });
         clearCallDisconnectTimer(userId);
         const disconnectTimer = setTimeout(() => {
           const session = callSessionMap.get(activeCall.id);
