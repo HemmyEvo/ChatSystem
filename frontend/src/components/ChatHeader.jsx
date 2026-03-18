@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useChatStore } from '../store/useChatStore';
 import GoBackButton from './GoBackButton';
-import { Ban, Copy, Forward, Reply, Trash2, MoreVertical, X, Image as ImageIcon, PaintBucket, SlidersHorizontal, Phone } from 'lucide-react';
+import { Ban, Copy, Forward, Reply, Trash2, MoreVertical, X, Image as ImageIcon, PaintBucket, SlidersHorizontal, Phone, Video } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useCallStore } from '../store/useCallStore';
 
@@ -160,12 +160,21 @@ function ChatHeader() {
             <div className='relative flex items-center gap-2'>
               <button
                 type="button"
-                onClick={() => startCall(selectedUser)}
+                onClick={() => startCall(selectedUser, { video: false })}
                 disabled={Boolean(activeCallUser) || callStatus === 'ringing'}
                 className='rounded-full p-2 text-slate-300 transition hover:bg-slate-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50'
                 title='Start voice call'
               >
                 <Phone size={18} />
+              </button>
+              <button
+                type="button"
+                onClick={() => startCall(selectedUser, { video: true })}
+                disabled={Boolean(activeCallUser) || callStatus === 'ringing'}
+                className='rounded-full p-2 text-slate-300 transition hover:bg-slate-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50'
+                title='Start video call'
+              >
+                <Video size={18} />
               </button>
               <button onClick={() => setShowMenu((s) => !s)} className='text-slate-300'><MoreVertical size={18} /></button>
               {showMenu && (

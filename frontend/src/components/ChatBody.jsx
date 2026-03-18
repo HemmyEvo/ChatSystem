@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useChatStore } from '../store/useChatStore';
 import NoChatHistory from './NoChatHistory';
 import { useAuthStore } from '../store/useAuthStore';
-import { Check, CheckCheck, Download, Play, Pause, Smile, Reply, Mic } from 'lucide-react';
+import { Check, CheckCheck, Download, Play, Pause, Smile, Reply, Mic, MapPin, ExternalLink } from 'lucide-react';
 import SharedContactCard from './SharedContactCard';
 
 const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
@@ -65,6 +65,41 @@ const MessageSkeleton = () => {
         </div>
       ))}
     </div>
+  );
+};
+
+
+const LocationCard = ({ location, isOwnMessage }) => {
+  if (!location?.lat || !location?.lng) return null;
+  const mapUrl = `https://www.google.com/maps?q=${location.lat},${location.lng}`;
+
+  return (
+    <a
+      href={mapUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`mb-1 block overflow-hidden rounded-2xl border ${isOwnMessage ? 'border-white/10 bg-black/20' : 'border-black/20 bg-black/20'}`}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="relative h-36 w-full overflow-hidden bg-[radial-gradient(circle_at_top,#22d3ee55,transparent_50%),linear-gradient(135deg,#0f172a,#020617)]">
+        <div className="absolute inset-0 opacity-30 [background-image:linear-gradient(to_right,#ffffff18_1px,transparent_1px),linear-gradient(to_bottom,#ffffff18_1px,transparent_1px)] [background-size:24px_24px]" />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-rose-500/20 ring-8 ring-rose-500/10">
+            <MapPin size={28} className="text-rose-400" />
+          </div>
+        </div>
+        <div className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-black/55 px-3 py-1 text-xs text-white">
+          <MapPin size={14} /> Shared location
+        </div>
+      </div>
+      <div className="flex items-center justify-between gap-3 px-3 py-2 text-sm text-slate-100">
+        <div>
+          <div className="font-medium">{location.label || 'Open in Maps'}</div>
+          <div className="text-xs text-slate-300">{location.lat.toFixed(5)}, {location.lng.toFixed(5)}</div>
+        </div>
+        <ExternalLink size={16} className="text-slate-300" />
+      </div>
+    </a>
   );
 };
 
@@ -298,7 +333,7 @@ const MessageBubble = ({
               <Smile size={15} />
             </button>
 
-            {message.replyTo && <div className='bg-black/25 rounded px-2 py-1 mb-1 text-xs border-l-2 border-emerald-400 opacity-90 line-clamp-3 whitespace-pre-wrap'>{message.replyTo.text || 'Media message'}</div>}
+            {message.replyTo && <div className='bg-black/25 rounded px-2 py-1 mb-1 text-xs border-l-2 border-emerald-400 opacity-90 line-clamp-3 whitespace-pre-wrap'>{message.replyTo.text || (message.replyTo.location ? 'Shared location' : 'Media message')}</div>}
 
             {message.image && <img src={message.image} alt='Attachment' onClick={(e) => { e.stopPropagation(); setLightboxMedia({ url: message.image, type: 'image' }); }} className='rounded cursor-pointer max-h-60 w-full object-cover mb-1' />}
             {message.video && <div className='relative cursor-pointer mb-1' onClick={(e) => { e.stopPropagation(); setLightboxMedia({ url: message.video, type: 'video' }); }}><video className='rounded max-h-60 w-full bg-black object-cover'><source src={message.video} type='video/mp4' /></video><div className='absolute inset-0 flex items-center justify-center'><Play size={24} /></div></div>}
@@ -306,6 +341,7 @@ const MessageBubble = ({
             {message.audio && <VoiceNotePlayer audioUrl={message.audio} isOwnMessage={isOwnMessage} selectedUser={selectedUser} />}
             
             {message.sharedContactId && <div className='bg-black/20 p-2 rounded-lg mb-1'><SharedContactCard contactIdOrObject={message.sharedContactId} isOwnMessage={isOwnMessage} /></div>}
+            {message.location && <LocationCard location={message.location} isOwnMessage={isOwnMessage} />}
             
             {message.text && <span className='leading-relaxed text-[15px] whitespace-pre-wrap'>{message.text}</span>}
 

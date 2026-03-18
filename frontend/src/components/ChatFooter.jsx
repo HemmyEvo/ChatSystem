@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useChatStore } from '../store/useChatStore';
-import { Paperclip, Send, Mic, Video, User, X, Image as ImageIcon, Trash2, Square, Search } from 'lucide-react';
+import { Paperclip, Send, Mic, Video, User, X, Image as ImageIcon, Trash2, Square, Search, MapPin } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const messageSendSound = new Audio('/sounds/send.mp3');
@@ -16,6 +16,7 @@ function ChatFooter() {
   const [audioBlob, setAudioBlob] = useState(null);
   const [audioUrl, setAudioUrl] = useState(null);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [isSharingLocation, setIsSharingLocation] = useState(false);
 
   const fileInputRef = useRef(null);
   const videoInputRef = useRef(null);
@@ -77,6 +78,39 @@ function ChatFooter() {
     setPreviewMedia({ file, url: URL.createObjectURL(file), type }); setShowAttachMenu(false); e.target.value = null;
   };
 
+  const handleShareLocation = async () => {
+    if (!navigator.geolocation) {
+      toast.error('Location sharing is not available in this browser.');
+      return;
+    }
+    setIsSharingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          await sendMessage({
+            text: '📍 Shared a live location pin',
+            location: {
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+              label: `Accuracy ±${Math.round(position.coords.accuracy)}m`,
+            },
+          });
+          playSound(messageSendSound);
+          setShowAttachMenu(false);
+        } catch (error) {
+          toast.error(error.response?.data?.message || 'Failed to share location');
+        } finally {
+          setIsSharingLocation(false);
+        }
+      },
+      () => {
+        toast.error('Location access denied.');
+        setIsSharingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  };
+
   const filteredFriends = friends.filter((friend) => friend.username.toLowerCase().includes(shareContactSearchTerm.toLowerCase()));
   const handleShareContact = async (contact) => { await sendMessage({ sharedContactId: contact._id }); playSound(messageSendSound); setShowContactModal(false); setShowAttachMenu(false); setShareContactSearchTerm(''); };
 
@@ -84,7 +118,7 @@ function ChatFooter() {
     <div className='bg-slate-800 p-3 sm:p-4 relative w-full box-border'>
       {previewMedia && <div className="absolute bottom-full left-0 w-full bg-slate-800 border-t border-slate-700 p-4 shadow-lg z-40 flex flex-col gap-4"><div className="flex justify-between items-center text-white mb-2"><h3 className="font-semibold capitalize">Send {previewMedia.type}</h3><button onClick={() => setPreviewMedia(null)} className="p-1 hover:bg-slate-700 rounded-full"><X size={20} /></button></div><div className="flex-1 flex items-center justify-center bg-slate-900 rounded-lg overflow-hidden min-h-[200px] max-h-[40vh]">{previewMedia.type === 'image' && <img src={previewMedia.url} alt="Preview" className="max-h-full max-w-full object-contain" />}{previewMedia.type === 'video' && <video src={previewMedia.url} controls className="max-h-full max-w-full" />}</div></div>}
 
-      {replyTarget && <div className='mb-2 w-full flex items-start justify-between bg-slate-700/70 border-l-4 border-emerald-400 rounded-md px-3 py-2 box-border overflow-hidden'><div className='flex-1 min-w-0 flex flex-col pr-2'><span className='text-emerald-300 text-xs mb-1 font-semibold truncate'>Replying to message</span><span className='text-slate-200 text-[13px] opacity-90 line-clamp-3 break-words' style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{replyTarget.text || 'Media message'}</span></div><button onClick={() => setReplyTarget(null)} type='button' className='flex-shrink-0 mt-0.5 p-1 hover:bg-slate-600 rounded-full transition-colors'><X size={16} /></button></div>}
+      {replyTarget && <div className='mb-2 w-full flex items-start justify-between bg-slate-700/70 border-l-4 border-emerald-400 rounded-md px-3 py-2 box-border overflow-hidden'><div className='flex-1 min-w-0 flex flex-col pr-2'><span className='text-emerald-300 text-xs mb-1 font-semibold truncate'>Replying to message</span><span className='text-slate-200 text-[13px] opacity-90 line-clamp-3 break-words' style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{replyTarget.text || (replyTarget.location ? 'Shared location' : 'Media message')}</span></div><button onClick={() => setReplyTarget(null)} type='button' className='flex-shrink-0 mt-0.5 p-1 hover:bg-slate-600 rounded-full transition-colors'><X size={16} /></button></div>}
 
       <form onSubmit={handleSendMessage} className='flex items-end gap-2 w-full box-border'>
         <div className='relative pb-[6px] flex-shrink-0'>
@@ -93,6 +127,7 @@ function ChatFooter() {
             <button type="button" onClick={() => fileInputRef.current?.click()} className='flex items-center gap-3 p-2 hover:bg-slate-600 rounded text-left text-sm text-slate-200'><ImageIcon size={18} className="text-blue-400" /> Image / Gallery</button>
             <button type="button" onClick={() => videoInputRef.current?.click()} className='flex items-center gap-3 p-2 hover:bg-slate-600 rounded text-left text-sm text-slate-200'><Video size={18} className="text-pink-400" /> Video</button>
             <button type="button" onClick={() => setShowContactModal(true)} className='flex items-center gap-3 p-2 hover:bg-slate-600 rounded text-left text-sm text-slate-200'><User size={18} className="text-green-400" /> Share Friend</button>
+            <button type="button" onClick={handleShareLocation} disabled={isSharingLocation} className='flex items-center gap-3 p-2 hover:bg-slate-600 rounded text-left text-sm text-slate-200 disabled:opacity-60'><MapPin size={18} className="text-amber-400" /> {isSharingLocation ? 'Sharing...' : 'Share Location'}</button>
           </div>
         </div>
         <input type="file" hidden ref={fileInputRef} accept="image/*" onChange={(e) => handleFileUpload(e, 'image')} />
