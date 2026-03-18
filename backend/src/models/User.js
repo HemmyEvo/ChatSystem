@@ -1,12 +1,15 @@
 import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema({
-    fullname: { type: String, required: true },
+    username: { type: String, required: true, unique: true, trim: true, lowercase: true },
     password: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     profilePicture: { type: String, default: '' },
     lastSeen: { type: Date, default: Date.now },
     blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    friends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    friendRequestsSent: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    friendRequestsReceived: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     gameStats: {
       whot: {
         played: { type: Number, default: 0 },

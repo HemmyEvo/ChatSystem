@@ -5,8 +5,8 @@ import User from "../models/User.js";
 
 const canInteract = async (senderId, receiverId) => {
   const [sender, receiver] = await Promise.all([
-    User.findById(senderId).select('blockedUsers'),
-    User.findById(receiverId).select('blockedUsers'),
+    User.findById(senderId).select('blockedUsers friends'),
+    User.findById(receiverId).select('blockedUsers friends'),
   ]);
 
   if (!sender || !receiver) return { ok: false, message: 'User not found', code: 404 };
@@ -18,20 +18,127 @@ const canInteract = async (senderId, receiverId) => {
     return { ok: false, message: 'Messaging is blocked between these users', code: 403 };
   }
 
+  const areFriends = sender.friends.some((id) => id.toString() === receiverId.toString());
+  if (!areFriends) {
+    return { ok: false, message: 'You can only chat with friends', code: 403 };
+  }
+
   return { ok: true };
 };
 
 const visibleFilter = (myId) => ({ deletedFor: { $ne: myId } });
 
+const mapRelationship = (viewer, user) => ({
+  _id: user._id,
+  username: user.username,
+  email: user.email,
+  profilePicture: user.profilePicture,
+  lastSeen: user.lastSeen,
+  isFriend: viewer.friends.some((id) => id.toString() === user._id.toString()),
+  requestSent: viewer.friendRequestsSent.some((id) => id.toString() === user._id.toString()),
+  requestReceived: viewer.friendRequestsReceived.some((id) => id.toString() === user._id.toString()),
+});
+
 export const messageController = {
-  contact: async (req, res) => {
+  people: async (req, res) => {
     try {
       const loggedInUserId = req.user._id;
-      const filteredUsers = await User.find({ _id: { $ne: loggedInUserId } }).select('-password');
-      return res.status(200).json({ filteredUsers });
+      const search = (req.query.search || '').trim();
+      const loggedInUser = await User.findById(loggedInUserId).select('friends friendRequestsSent friendRequestsReceived');
+      const query = { _id: { $ne: loggedInUserId } };
+      if (search) {
+        query.username = { $regex: search, $options: 'i' };
+      }
+      const users = await User.find(query).select('-password').sort({ username: 1 }).limit(search ? 50 : 100);
+      return res.status(200).json({ people: users.map((user) => mapRelationship(loggedInUser, user)) });
     } catch (error) {
-      console.log('Error fetching contacts:', error);
-      return res.status(500).json({ message: "Server error" });
+      console.log('Error fetching people:', error);
+      return res.status(500).json({ message: 'Server error' });
+    }
+  },
+
+  friendList: async (req, res) => {
+    try {
+      const loggedInUser = await User.findById(req.user._id)
+        .populate('friends', 'username email profilePicture lastSeen')
+        .select('friends');
+      return res.status(200).json({ friends: loggedInUser?.friends || [] });
+    } catch (error) {
+      console.log('Error fetching friends:', error);
+      return res.status(500).json({ message: 'Server error' });
+    }
+  },
+
+  sendFriendRequest: async (req, res) => {
+    try {
+      const myId = req.user._id;
+      const { id: targetUserId } = req.params;
+      if (myId.toString() === targetUserId) return res.status(400).json({ message: 'You cannot send a request to yourself' });
+
+      const [me, target] = await Promise.all([
+        User.findById(myId).select('friends friendRequestsSent friendRequestsReceived username profilePicture'),
+        User.findById(targetUserId).select('friends friendRequestsSent friendRequestsReceived username profilePicture'),
+      ]);
+      if (!target) return res.status(404).json({ message: 'User not found' });
+      if (me.friends.some((id) => id.toString() === targetUserId)) {
+        return res.status(400).json({ message: 'You are already friends' });
+      }
+      if (me.friendRequestsSent.some((id) => id.toString() === targetUserId)) {
+        return res.status(400).json({ message: 'Friend request already sent' });
+      }
+
+      await Promise.all([
+        User.findByIdAndUpdate(myId, { $addToSet: { friendRequestsSent: targetUserId } }),
+        User.findByIdAndUpdate(targetUserId, { $addToSet: { friendRequestsReceived: myId } }),
+      ]);
+
+      const targetSocketId = getReceiverSocketId(targetUserId);
+      if (targetSocketId) {
+        io.to(targetSocketId).emit('friend:request:received', {
+          fromUser: { _id: me._id, username: me.username, profilePicture: me.profilePicture },
+        });
+      }
+
+      return res.status(200).json({ message: 'Friend request sent' });
+    } catch (error) {
+      console.log('Error sending friend request:', error);
+      return res.status(500).json({ message: 'Server error' });
+    }
+  },
+
+  respondToFriendRequest: async (req, res) => {
+    try {
+      const myId = req.user._id;
+      const { id: requesterId } = req.params;
+      const { accept } = req.body;
+      const [me, requester] = await Promise.all([
+        User.findById(myId).select('friendRequestsReceived friends username profilePicture'),
+        User.findById(requesterId).select('friendRequestsSent friends username profilePicture'),
+      ]);
+      if (!requester) return res.status(404).json({ message: 'User not found' });
+      if (!me.friendRequestsReceived.some((id) => id.toString() === requesterId)) {
+        return res.status(400).json({ message: 'No pending request from this user' });
+      }
+
+      const updates = [
+        User.findByIdAndUpdate(myId, { $pull: { friendRequestsReceived: requesterId }, ...(accept ? { $addToSet: { friends: requesterId } } : {}) }),
+        User.findByIdAndUpdate(requesterId, { $pull: { friendRequestsSent: myId }, ...(accept ? { $addToSet: { friends: myId } } : {}) }),
+      ];
+      await Promise.all(updates);
+
+      const requesterSocketId = getReceiverSocketId(requesterId);
+      if (requesterSocketId) {
+        io.to(requesterSocketId).emit('friend:request:responded', {
+          userId: myId.toString(),
+          accepted: Boolean(accept),
+          user: { _id: me._id, username: me.username, profilePicture: me.profilePicture },
+        });
+      }
+
+      return res.status(200).json({ message: accept ? 'Friend request accepted' : 'Friend request declined' });
+    } catch (error) {
+      console.log('Error responding to friend request:', error);
+      return res.status(500).json({ message: 'Server error' });
     }
   },
 
@@ -93,7 +200,7 @@ export const messageController = {
       return res.status(200).json({
         chatPartners: chatPartners.map((partner) => ({
           _id: partner._id,
-          fullname: partner.fullname,
+          username: partner.username,
           email: partner.email,
           profilePicture: partner.profilePicture,
           lastSeen: partner.lastSeen,
@@ -124,7 +231,7 @@ export const messageController = {
         ],
       })
         .populate('replyTo', 'text image video audio document senderId createdAt')
-        .populate('sharedContactId', 'fullname profilePicture email')
+        .populate('sharedContactId', 'username profilePicture email')
         .sort({ createdAt: 1 });
 
       return res.status(200).json({ messages });
@@ -179,7 +286,7 @@ export const messageController = {
 
       await newMessage.save();
       await newMessage.populate('replyTo', 'text image video audio document senderId createdAt');
-      if (sharedContactId) await newMessage.populate('sharedContactId', 'fullname profilePicture email');
+      if (sharedContactId) await newMessage.populate('sharedContactId', 'username profilePicture email');
 
       const receiverSocketId = getReceiverSocketId(receiverId);
       if (receiverSocketId) io.to(receiverSocketId).emit('newMessage', newMessage);
@@ -231,7 +338,6 @@ export const messageController = {
       if (unreadMessages.length) {
         await Message.updateMany(
           { _id: { $in: unreadMessages.map((m) => m._id) } }, 
-          // NEW: Ensure deliveredTo is also updated
           { $addToSet: { readBy: myId, deliveredTo: myId }, $set: { readAt: new Date() } }
         );
         const chatUserSocketId = getReceiverSocketId(chatUserId);

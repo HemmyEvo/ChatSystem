@@ -1,3 +1,4 @@
+import React from 'react';
 import BorderAnimated from '../components/BorderAnimated.jsx';
 import ProfileHeader from '../components/ProfileHeader.jsx';
 import ActiveTabSwitch from '../components/ActiveTabSwitch.jsx';
@@ -8,11 +9,10 @@ import ChatContainer from '../components/ChatContainer.jsx';
 import NoConversationPlacehoder from '../components/NoConversationPlacehoder.jsx';
 import GameLayer from '../components/GameLayer.jsx';
 function ChatPage() {
-  // const { logout } = useAuthStore();
   const {activeTab,selectedUser} = useChatStore();
  
   return (
-    <div className="relative w-full h-[100vh] max-w-6xl ">
+    <div className="relative w-full max-w-6xl" style={{ height: "var(--app-height, 100dvh)" }}>
       <GameLayer />
       <BorderAnimated>
       {/* Left side - contacts list */}

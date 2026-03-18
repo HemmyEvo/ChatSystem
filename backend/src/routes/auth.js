@@ -3,7 +3,8 @@ import { authController } from '../controller/auth.js';
 import { arjectProtection, protectRoute } from '../lib/utlis.js';
 
 const router = express.Router();
-router.use(arjectProtection); // Apply Arcjet protection to all routes in this router
+router.use(arjectProtection);
+router.get('/username-suggestions', authController.suggestUsernames);
 router.post('/login', authController.login);
 router.post('/register', authController.register);
 router.get('/logout',protectRoute, authController.logout);

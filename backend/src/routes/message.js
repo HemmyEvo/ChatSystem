@@ -4,7 +4,10 @@ import { protectRoute, arjectProtection } from '../lib/utlis.js';
 const router = express.Router();
 
 router.use(arjectProtection, protectRoute);
-router.get('/contact', messageController.contact);
+router.get('/people', messageController.people);
+router.get('/friends', messageController.friendList);
+router.post('/friend-request/:id', messageController.sendFriendRequest);
+router.post('/friend-request/:id/respond', messageController.respondToFriendRequest);
 router.get('/chats', messageController.chats);
 router.get('/:id', messageController.messageById);
 router.post('/send/:id', messageController.sendMessage);

@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import { Settings, LogOutIcon, Volume2Icon, VolumeOffIcon, ChevronDown } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Settings, LogOutIcon, Volume2Icon, VolumeOffIcon, ChevronDown, Download } from "lucide-react";
 import { useAuthStore } from "../store/useAuthStore";
 import { useChatStore } from "../store/useChatStore";
 
@@ -12,7 +12,26 @@ function ProfileHeader() {
   const { soundSettings, setSoundSetting } = useChatStore();
   const [selectedImg, setSelectedImg] = useState(null);
   const [openMenu, setOpenMenu] = useState(false);
+  const [installPromptEvent, setInstallPromptEvent] = useState(null);
+  const [isInstalled, setIsInstalled] = useState(window.matchMedia?.('(display-mode: standalone)').matches || false);
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    const onBeforeInstallPrompt = (event) => {
+      event.preventDefault();
+      setInstallPromptEvent(event);
+    };
+    const onInstalled = () => {
+      setIsInstalled(true);
+      setInstallPromptEvent(null);
+    };
+    window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
@@ -29,6 +48,13 @@ function ProfileHeader() {
     };
     
     reader.readAsDataURL(file);
+  };
+
+  const handleInstallApp = async () => {
+    if (!installPromptEvent) return;
+    await installPromptEvent.prompt();
+    await installPromptEvent.userChoice.catch(() => null);
+    setInstallPromptEvent(null);
   };
 
   const toggleSound = (type) => {
@@ -55,7 +81,7 @@ function ProfileHeader() {
               onClick={() => fileInputRef.current.click()}
             >
               <img
-                src={selectedImg || authUser?.data?.profilePicture || "/avatar.png"}
+                src={selectedImg || authUser?.profilePicture || '/avatar.png'}
                 alt="User image"
                 className="size-full object-cover"
               />
@@ -74,7 +100,7 @@ function ProfileHeader() {
           </div>
 
           <div>
-            <h3 className="text-slate-200 font-medium text-base max-w-[180px] truncate">{authUser?.fullname}</h3>
+            <h3 className="text-slate-200 font-medium text-base max-w-[180px] truncate">@{authUser?.username}</h3>
             <p className="text-slate-400 text-xs">Online</p>
           </div>
         </div>
@@ -105,6 +131,16 @@ function ProfileHeader() {
                 Send sound
                 {soundSettings.send ? <Volume2Icon className="size-4 text-emerald-400" /> : <VolumeOffIcon className="size-4 text-slate-500" />}
               </button>
+
+              {!isInstalled && installPromptEvent && (
+                <button
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm text-cyan-300 hover:bg-slate-700 rounded transition-colors"
+                  onClick={handleInstallApp}
+                >
+                  Install app
+                  <Download className="size-4" />
+                </button>
+              )}
 
               <button
                 className="w-full flex items-center justify-between px-3 py-2 text-sm text-rose-300 hover:bg-slate-700 rounded transition-colors mt-1 border-t border-slate-700/50 pt-2"
