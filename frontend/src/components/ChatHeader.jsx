@@ -48,7 +48,7 @@ const compressImage = (file, callback) => {
 function ChatHeader() {
   const { 
     selectedUser, setSelectedUser, blockUser, deleteChatHistory, selectedMessages, messages, 
-    clearSelectedMessages, setReplyTarget, deleteMessageForMe, deleteMessageForEveryone, forwardSelectedMessages,
+    clearSelectedMessages, setReplyTarget, deleteMessageForMe, deleteMessageForEveryone, openForwardModal,
     chatBackground, setChatBackground, chatBubbleColors, setChatBubbleColors, chatBgOpacity, setChatBgOpacity 
   } = useChatStore();
   
@@ -124,7 +124,7 @@ function ChatHeader() {
             <div className='flex items-center gap-5 text-slate-200'>
               <button onClick={copySelected}><Copy size={18} /></button>
               <button onClick={() => { if (selectedItems[0]) setReplyTarget(selectedItems[0]); clearSelectedMessages(); }}><Reply size={18} /></button>
-              <button onClick={forwardSelectedMessages}><Forward size={18} /></button>
+              <button onClick={openForwardModal}><Forward size={18} /></button>
               <div className='dropdown dropdown-end'>
                 <button tabIndex={0}><Trash2 size={18} /></button>
                 <ul tabIndex={0} className='dropdown-content menu p-2 shadow bg-[#233138] rounded-box w-44 z-50'>
@@ -145,12 +145,12 @@ function ChatHeader() {
                 onClick={() => setShowLightbox(true)}
               >
                 <div className='size-10 rounded-full'>
-                  <img src={selectedUser?.profilePicture || '/avatar.png'} alt={selectedUser?.fullname} />
+                  <img src={selectedUser?.profilePicture || '/avatar.png'} alt={selectedUser?.username} />
                 </div>
               </button>
 
               <div className='flex flex-col items-start'>
-                <h4 className='text-slate-200 font-medium'>{selectedUser?.fullname}</h4>
+                <h4 className='text-slate-200 font-medium'>@{selectedUser?.username}</h4>
                 <p className='text-xs text-slate-400'>{online ? 'online' : `last seen today at ${formatLastSeen(lastSeen)}`}</p>
               </div>
             </div>
@@ -234,11 +234,11 @@ function ChatHeader() {
           <div className="flex flex-col items-center gap-4">
             <img 
               src={selectedUser?.profilePicture || '/avatar.png'} 
-              alt={selectedUser?.fullname} 
+              alt={selectedUser?.username} 
               className='max-w-full max-h-[75vh] object-contain rounded-full shadow-2xl' 
               onClick={(e) => e.stopPropagation()} 
             />
-            <h2 className="text-white text-2xl font-semibold mt-4">{selectedUser?.fullname}</h2>
+            <h2 className="text-white text-2xl font-semibold mt-4">@{selectedUser?.username}</h2>
             <p className="text-slate-400">{selectedUser?.email}</p>
           </div>
         </div>

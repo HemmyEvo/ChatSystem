@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 import { socketAuthmiddleware } from './utlis.js';
 import User from '../models/User.js';
 import Message from '../models/Message.js';
-import { applyGameAction, clearInvite, createInvite, createSession, forfeitSession, getActiveSessionByPlayer, getInvite, getPlayerState, getSession } from './gameEngine.js';
+import { applyGameAction, clearInvite, createInvite, createSession, forfeitSession, getActiveSessionByPlayer, getInvite, getPlayerState } from './gameEngine.js';
 
 dotenv.config();
 
@@ -37,7 +37,7 @@ const emitGameState = (session) => {
 };
 
 const updateGameStats = async (session) => {
-  if (!session?.state?.winnerId) return;
+  if (!session?.state?.winnerId) return null;
   const loserId = session.players.find((id) => id !== session.state.winnerId);
   await Promise.all([
     User.findByIdAndUpdate(session.state.winnerId, {
@@ -67,6 +67,48 @@ const updateGameStats = async (session) => {
       },
     }),
   ]);
+
+  const [winner, loser] = await Promise.all([
+    User.findById(session.state.winnerId).select('username gameStats'),
+    User.findById(loserId).select('username gameStats'),
+  ]);
+
+  return { winner, loser };
+};
+
+const emitLastMessageToParticipants = (messageDoc) => {
+  const senderSocketId = getReceiverSocketId(messageDoc.senderId.toString());
+  const receiverSocketId = getReceiverSocketId(messageDoc.receiverId.toString());
+  if (senderSocketId) io.to(senderSocketId).emit('chat:last-message', messageDoc);
+  if (receiverSocketId) io.to(receiverSocketId).emit('chat:last-message', messageDoc);
+};
+
+const sendGameSummaryMessages = async (session, statsPayload) => {
+  if (!statsPayload?.winner || !statsPayload?.loser) return;
+  const winnerId = session.state.winnerId.toString();
+  const loserId = session.players.find((id) => id !== winnerId).toString();
+  const summaries = [
+    {
+      senderId: winnerId,
+      receiverId: loserId,
+      text: `📊 ${session.gameType.toUpperCase()} finished. @${statsPayload.winner.username} won. My total wins: ${statsPayload.winner.gameStats?.totalWon || 0}/${statsPayload.winner.gameStats?.totalPlayed || 0}.`,
+    },
+    {
+      senderId: loserId,
+      receiverId: winnerId,
+      text: `📊 ${session.gameType.toUpperCase()} finished. @${statsPayload.winner.username} won this round. My total wins: ${statsPayload.loser.gameStats?.totalWon || 0}/${statsPayload.loser.gameStats?.totalPlayed || 0}.`,
+    },
+  ];
+
+  for (const payload of summaries) {
+    const summaryMessage = await Message.create(payload);
+    const populatedMessage = await Message.findById(summaryMessage._id);
+    const receiverSocketId = getReceiverSocketId(payload.receiverId);
+    const senderSocketId = getReceiverSocketId(payload.senderId);
+    if (receiverSocketId) io.to(receiverSocketId).emit('newMessage', populatedMessage);
+    if (senderSocketId) io.to(senderSocketId).emit('newMessage', populatedMessage);
+    emitLastMessageToParticipants(populatedMessage);
+  }
 };
 
 export async function updateUserLastSeen(userId) {
@@ -126,6 +168,11 @@ io.on('connection', async (socket) => {
     if (receiverSocketId) io.to(receiverSocketId).emit('typing', { senderId });
   });
 
+  socket.on('isTypingStop', ({ senderId, receiverId }) => {
+    const receiverSocketId = getReceiverSocketId(receiverId);
+    if (receiverSocketId) io.to(receiverSocketId).emit('typing:stop', { senderId });
+  });
+
   socket.on('game:invite', ({ toUserId, gameType }) => {
     if (!toUserId || !['whot', 'ludo'].includes(gameType)) return;
 
@@ -148,14 +195,14 @@ io.on('connection', async (socket) => {
         id: crypto.randomUUID(),
         gameType,
         fromUserId: userId,
-        fromName: socket.user?.fullname || 'Player',
+        fromName: socket.user?.username || 'Player',
         createdAt: Date.now(),
       });
       return;
     }
 
     const invite = createInvite({ fromUserId: userId, toUserId, gameType });
-    io.to(receiverSocketId).emit('game:invite', { ...invite, fromUser: { _id: userId, fullname: socket.user?.fullname || 'Player' } });
+    io.to(receiverSocketId).emit('game:invite', { ...invite, fromUser: { _id: userId, username: socket.user?.username || 'Player' } });
     socket.emit('game:invite:sent', invite);
   });
 
@@ -185,7 +232,8 @@ io.on('connection', async (socket) => {
 
     emitGameState(result.session);
     if (result.session.status === 'completed') {
-      await updateGameStats(result.session);
+      const statsPayload = await updateGameStats(result.session);
+      await sendGameSummaryMessages(result.session, statsPayload);
       result.session.players.forEach((id) => {
         const sid = getReceiverSocketId(id);
         if (sid) io.to(sid).emit('game:ended', { sessionId, winnerId: result.session.state.winnerId, gameType: result.session.gameType });
@@ -197,7 +245,8 @@ io.on('connection', async (socket) => {
     const session = forfeitSession({ sessionId, playerId: userId });
     if (!session) return;
     emitGameState(session);
-    await updateGameStats(session);
+    const statsPayload = await updateGameStats(session);
+    await sendGameSummaryMessages(session, statsPayload);
     session.players.forEach((id) => {
       const sid = getReceiverSocketId(id);
       if (sid) io.to(sid).emit('game:ended', { sessionId, winnerId: session.state.winnerId, gameType: session.gameType });
@@ -270,4 +319,4 @@ io.on('connection', async (socket) => {
   });
 });
 
-export { server, io, app, getSession };
+export { server, io, app };

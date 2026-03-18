@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/purity */
 import React, { useState, useEffect, useRef } from 'react';
-import { BellRing, PhoneMissed } from 'lucide-react';
+import { PhoneMissed } from 'lucide-react';
 import { useGameStore } from '../store/useGameStore';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -575,8 +575,6 @@ export default function GameLayer() {
     pendingInvite,
     respondInvite,
     activeGame,
-    dashboard,
-    isDashboardVisible,
     forfeitGame,
     sendAction,
     missedGameCalls,
@@ -610,7 +608,7 @@ export default function GameLayer() {
             <div className="text-center mb-4"><span className="text-6xl">🎮</span></div>
             <h3 className="text-2xl font-bold text-center mb-2">Game Invite!</h3>
             <p className="text-center text-lg mb-6">
-              {pendingInvite.fromUser?.fullname} invited you to play <span className="font-bold text-yellow-300">{pendingInvite.gameType.toUpperCase()}</span>
+              @{pendingInvite.fromUser?.username} invited you to play <span className="font-bold text-yellow-300">{pendingInvite.gameType.toUpperCase()}</span>
             </p>
             <div className="flex gap-3 justify-center">
               <button onClick={() => respondInvite(false)} className="px-6 py-2 bg-red-600 rounded-full font-bold hover:bg-red-700">Decline</button>
@@ -709,35 +707,7 @@ export default function GameLayer() {
         </div>
       )}
 
-      {dashboard && isDashboardVisible && (
-        <div className="fixed right-4 bottom-4 z-[105] bg-gradient-to-b from-green-900 to-green-800 border-2 border-yellow-500 rounded-xl p-6 text-white w-80">
-          <h4 className="text-xl font-bold mb-4 flex items-center gap-2"><span>📊</span> Your Stats</h4>
-          <div className="space-y-3">
-            <div className="bg-white/10 rounded-lg p-3">
-              <div className="text-sm opacity-80">Total Games</div>
-              <div className="text-2xl font-bold">{dashboard.totalPlayed || 0}</div>
-            </div>
-            <div className="bg-white/10 rounded-lg p-3">
-              <div className="text-sm opacity-80">Wins</div>
-              <div className="text-2xl font-bold text-green-400">{dashboard.totalWon || 0}</div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="bg-white/10 rounded-lg p-2 text-center">
-                <div className="text-sm">WHOT</div>
-                <div className="font-bold">{dashboard.whot?.won || 0}/{dashboard.whot?.played || 0}</div>
-              </div>
-              <div className="bg-white/10 rounded-lg p-2 text-center">
-                <div className="text-sm">LUDO</div>
-                <div className="font-bold">{dashboard.ludo?.won || 0}/{dashboard.ludo?.played || 0}</div>
-              </div>
-            </div>
-            <div className="bg-black/20 rounded-lg p-3 border border-white/10">
-              <div className="flex items-center gap-2 text-sm font-semibold text-cyan-200"><BellRing size={15} /> Missed calls</div>
-              <div className="text-2xl font-bold mt-1">{missedGameCalls.length}</div>
-            </div>
-          </div>
-        </div>
-      )}
+
     </>
   );
 }
