@@ -26,6 +26,20 @@ const formatDuration = (seconds = 0) => {
 
 const formatMissedAt = (value) => new Date(value).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
+const useIsMobileViewport = () => {
+  const getMatches = () => (typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+  const [isMobileViewport, setIsMobileViewport] = useState(getMatches);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobileViewport(getMatches());
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  return isMobileViewport;
+};
+
 const DrawingCanvas = ({ strokes, draftStroke, onPointerDown, onPointerMove, onPointerUp }) => {
   const canvasRef = useRef(null);
   useEffect(() => {
@@ -99,6 +113,15 @@ function VideoSurface({ stream, muted = false, mirrored = false, fallbackAvatar,
       </div>
     </div>
   );
+}
+
+function RemoteAudio({ stream }) {
+  const audioRef = useRef(null);
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.srcObject = stream || null;
+  }, [stream]);
+
+  return <audio ref={audioRef} autoPlay playsInline />;
 }
 
 const ActionButton = ({ active, danger, onClick, icon, label }) => (
@@ -205,6 +228,7 @@ function VoiceCallView({ activeCallUser, remoteStream, callStatus, isMuted, acce
 
 function CallLayer() {
   const [isAnnotating, setIsAnnotating] = useState(false);
+  const isMobileViewport = useIsMobileViewport();
   const {
     incomingCall,
     activeCallUser,
@@ -255,89 +279,129 @@ function CallLayer() {
   if (incomingCall && isVideoCall) return <><IncomingCallView incomingCall={incomingCall} acceptCall={acceptCall} declineCall={declineCall} /><MissedCallsPanel missedCalls={missedCalls} clearMissedCalls={clearMissedCalls} /></>;
   if (!isVideoCall) return <><VoiceCallView incomingCall={incomingCall} activeCallUser={activeCallUser} remoteStream={remoteStream} callStatus={callStatus} isMuted={isMuted} acceptCall={acceptCall} declineCall={declineCall} endCall={endCall} toggleMute={toggleMute} /><MissedCallsPanel missedCalls={missedCalls} clearMissedCalls={clearMissedCalls} /></>;
 
+  const renderToolButtons = (compact = false) => (
+    <>
+      <ActionButton active={isMuted} onClick={toggleMute} icon={isMuted ? <MicOff size={20} /> : <Mic size={20} />} label={isMuted ? 'Unmute' : 'Mute'} />
+      <ActionButton active={!isCameraEnabled} onClick={toggleCamera} icon={isCameraEnabled ? <Camera size={20} /> : <CameraOff size={20} />} label={isCameraEnabled ? 'Camera on' : 'Camera off'} />
+      <ActionButton active={isScreenSharing} onClick={toggleScreenShare} icon={<MonitorUp size={20} />} label={compact ? 'Screen' : 'Share screen'} />
+      <ActionButton active={isAnnotating} onClick={() => setIsAnnotating((value) => !value)} icon={<Video size={20} />} label={isAnnotating ? 'Drawing on' : 'Draw'} />
+      <ActionButton active={isRecording} onClick={toggleRecording} icon={<CircleDot size={20} />} label={isRecording ? 'Stop rec' : 'Record'} />
+      <ActionButton onClick={shareLocationInCall} icon={<MapPin size={20} />} label={compact ? 'Pin' : 'Send pin'} />
+      <ActionButton onClick={clearDrawings} icon={<Eraser size={20} />} label={compact ? 'Clear' : 'Clear draw'} />
+      <ActionButton danger onClick={endCall} icon={<PhoneOff size={20} />} label="End call" />
+    </>
+  );
+
   return (
     <>
       <div className="fixed inset-0 z-[120] min-h-[100dvh] overflow-hidden bg-slate-950 text-white">
+        <RemoteAudio stream={remoteStream} />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,#0f172a,#020617_70%)]" />
-        <div className="relative flex h-[100dvh] flex-col p-3 sm:p-4 lg:p-6">
-          <div className="grid flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
-            <section className="relative min-h-[42vh] overflow-hidden rounded-[2rem] border border-white/10 bg-black shadow-2xl lg:min-h-0">
-              <VideoSurface stream={remoteStream} fallbackAvatar={avatar} title={title} subtitle={remoteSubtitle} />
-              <DrawingCanvas
-                strokes={collaborativePaths}
-                draftStroke={localDrawStroke}
-                onPointerDown={(point) => isAnnotating && startStroke(point)}
-                onPointerMove={(point) => isAnnotating && extendStroke(point)}
-                onPointerUp={() => isAnnotating && finishStroke()}
-              />
-              <div className="absolute left-4 top-4 right-4 z-20 flex flex-wrap items-start justify-between gap-3">
-                <div className="rounded-2xl border border-white/10 bg-black/35 px-4 py-3 backdrop-blur-md">
-                  <div className="text-lg font-semibold">{title}</div>
-                  <div className="text-sm text-slate-300">{callStatus === 'connected' ? 'Connected call' : remoteSubtitle}</div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {isRecording && <div className="inline-flex items-center gap-2 rounded-full bg-rose-500 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em]"><CircleDot size={14} /> Recording {formatDuration(recordingSeconds)}</div>}
-                  {remoteMediaState.isRecording && <div className="inline-flex items-center gap-2 rounded-full bg-amber-500/90 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-950"><CircleDot size={14} /> They&apos;re recording</div>}
-                  {remoteLocation && (
-                    <a href={`https://www.google.com/maps?q=${remoteLocation.lat},${remoteLocation.lng}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/35 px-3 py-1 text-xs text-slate-100 backdrop-blur-md">
-                      <MapPin size={14} /> Open shared location
-                    </a>
-                  )}
-                </div>
-              </div>
-            </section>
-
-            <aside className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:grid-cols-1 lg:grid-rows-[auto_auto_1fr]">
-              <div className="order-2 rounded-[2rem] border border-white/10 bg-white/5 p-3 backdrop-blur-xl sm:order-1">
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-semibold">Your preview</div>
-                    <div className="text-xs text-slate-400">{isScreenSharing ? 'Sharing your screen' : isCameraEnabled ? 'Camera ready' : 'Camera off'}</div>
+        <div className="relative h-[100dvh]">
+          {isMobileViewport ? (
+            <div className="flex h-full flex-col px-3 pb-4 pt-3">
+              <section className="relative min-h-0 flex-1 overflow-hidden rounded-[2rem] border border-white/10 bg-black shadow-2xl">
+                <VideoSurface stream={remoteStream} fallbackAvatar={avatar} title={title} subtitle={remoteSubtitle} />
+                <DrawingCanvas
+                  strokes={collaborativePaths}
+                  draftStroke={localDrawStroke}
+                  onPointerDown={(point) => isAnnotating && startStroke(point)}
+                  onPointerMove={(point) => isAnnotating && extendStroke(point)}
+                  onPointerUp={() => isAnnotating && finishStroke()}
+                />
+                <div className="absolute inset-x-3 top-3 z-20 flex items-start justify-between gap-3">
+                  <div className="max-w-[70%] rounded-3xl border border-white/10 bg-black/40 px-4 py-3 backdrop-blur-md">
+                    <div className="text-base font-semibold">{title}</div>
+                    <div className="text-xs text-slate-300">{callStatus === 'connected' ? 'Connected call' : remoteSubtitle}</div>
                   </div>
-                  {recordingUrl && (
-                    <a href={recordingUrl} download="call-recording.webm" className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-1 text-xs text-slate-200 transition hover:bg-white/10"><Download size={14} /> Download</a>
-                  )}
-                </div>
-                <div className="aspect-[4/3] overflow-hidden rounded-[1.5rem] border border-white/10 bg-slate-900">
-                  <VideoSurface stream={previewStream} fallbackAvatar={authUser?.profilePicture || '/avatar.png'} title="You" subtitle={isRecording ? `Recording ${formatDuration(recordingSeconds)}` : 'Local preview'} muted mirrored={!isScreenSharing} />
-                </div>
-              </div>
-
-              <div className="order-1 rounded-[2rem] border border-white/10 bg-white/5 p-4 backdrop-blur-xl sm:order-2">
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-semibold">Call tools</div>
-                    <div className="text-xs text-slate-400">Optimized for phones, tablets, and desktop.</div>
-                  </div>
-                  <div className="rounded-full border border-white/10 px-3 py-1 text-xs text-slate-300">{callStatus}</div>
-                </div>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-2">
-                  <ActionButton active={isMuted} onClick={toggleMute} icon={isMuted ? <MicOff size={20} /> : <Mic size={20} />} label={isMuted ? 'Unmute' : 'Mute'} />
-                  <ActionButton active={!isCameraEnabled} onClick={toggleCamera} icon={isCameraEnabled ? <Camera size={20} /> : <CameraOff size={20} />} label={isCameraEnabled ? 'Camera on' : 'Camera off'} />
-                  <ActionButton active={isScreenSharing} onClick={toggleScreenShare} icon={<MonitorUp size={20} />} label="Share screen" />
-                  <ActionButton active={isAnnotating} onClick={() => setIsAnnotating((value) => !value)} icon={<Video size={20} />} label={isAnnotating ? 'Drawing on' : 'Draw'} />
-                  <ActionButton active={isRecording} onClick={toggleRecording} icon={<CircleDot size={20} />} label={isRecording ? 'Stop rec' : 'Record'} />
-                  <ActionButton onClick={shareLocationInCall} icon={<MapPin size={20} />} label="Send pin" />
-                  <ActionButton onClick={clearDrawings} icon={<Eraser size={20} />} label="Clear draw" />
-                  <ActionButton danger onClick={endCall} icon={<PhoneOff size={20} />} label="End call" />
-                </div>
-              </div>
-
-              <div className="order-3 rounded-[2rem] border border-white/10 bg-white/5 p-4 backdrop-blur-xl">
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-semibold">Live status</div>
-                    <div className="text-xs text-slate-400">Know exactly what each side is sending.</div>
+                  <div className="aspect-[3/4] w-24 overflow-hidden rounded-[1.4rem] border border-white/10 bg-slate-900 shadow-xl">
+                    <VideoSurface stream={previewStream} fallbackAvatar={authUser?.profilePicture || '/avatar.png'} title="You" subtitle={isScreenSharing ? 'Screen' : 'Preview'} muted mirrored={!isScreenSharing} />
                   </div>
                 </div>
-                <div className="grid gap-2 text-sm text-slate-200">
-                  <div className="flex items-center justify-between rounded-2xl bg-black/20 px-3 py-2"><span>You</span><span>{isMuted ? 'Muted' : 'Mic on'} • {isCameraEnabled ? 'Camera on' : 'Camera off'}</span></div>
-                  <div className="flex items-center justify-between rounded-2xl bg-black/20 px-3 py-2"><span>{title}</span><span>{remoteMediaState.isMuted ? 'Muted' : 'Mic on'} • {remoteMediaState.isCameraEnabled ? 'Camera on' : 'Camera off'}</span></div>
-                  <div className="rounded-2xl bg-black/20 px-3 py-2 text-xs text-slate-300">Responsive stacked layout on small screens, dual-panel layout on larger screens, and dedicated action clusters for easier thumbs-only control.</div>
+                <div className="absolute inset-x-3 bottom-3 z-20 space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    <div className="rounded-full border border-white/10 bg-black/40 px-3 py-1 text-xs text-slate-100 backdrop-blur-md">{callStatus}</div>
+                    {isRecording && <div className="inline-flex items-center gap-2 rounded-full bg-rose-500 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em]"><CircleDot size={14} /> {formatDuration(recordingSeconds)}</div>}
+                    {remoteMediaState.isRecording && <div className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-3 py-1 text-xs font-semibold text-slate-950"><CircleDot size={14} /> Recording</div>}
+                    {remoteLocation && <a href={`https://www.google.com/maps?q=${remoteLocation.lat},${remoteLocation.lng}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1 text-xs text-slate-100 backdrop-blur-md"><MapPin size={14} /> Location</a>}
+                    {recordingUrl && <a href={recordingUrl} download="call-recording.webm" className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1 text-xs text-slate-100 backdrop-blur-md"><Download size={14} /> Download</a>}
+                  </div>
+                  <div className="rounded-[2rem] border border-white/10 bg-slate-950/70 p-3 backdrop-blur-xl">
+                    <div className="mb-3 grid grid-cols-2 gap-2 text-xs text-slate-300">
+                      <div className="rounded-2xl bg-white/5 px-3 py-2">You: {isMuted ? 'Muted' : 'Mic on'} • {isCameraEnabled ? 'Camera on' : 'Camera off'}</div>
+                      <div className="rounded-2xl bg-white/5 px-3 py-2">{title}: {remoteMediaState.isMuted ? 'Muted' : 'Mic on'} • {remoteMediaState.isCameraEnabled ? 'Camera on' : 'Camera off'}</div>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2">
+                      {renderToolButtons(true)}
+                    </div>
+                  </div>
                 </div>
+              </section>
+            </div>
+          ) : (
+            <div className="flex h-full flex-col p-4 lg:p-6">
+              <div className="grid flex-1 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+                <section className="relative min-h-[42vh] overflow-hidden rounded-[2.2rem] border border-white/10 bg-black shadow-2xl xl:min-h-0">
+                  <VideoSurface stream={remoteStream} fallbackAvatar={avatar} title={title} subtitle={remoteSubtitle} />
+                  <DrawingCanvas
+                    strokes={collaborativePaths}
+                    draftStroke={localDrawStroke}
+                    onPointerDown={(point) => isAnnotating && startStroke(point)}
+                    onPointerMove={(point) => isAnnotating && extendStroke(point)}
+                    onPointerUp={() => isAnnotating && finishStroke()}
+                  />
+                  <div className="absolute left-5 right-5 top-5 z-20 flex items-start justify-between gap-4">
+                    <div className="rounded-[1.8rem] border border-white/10 bg-black/35 px-5 py-4 backdrop-blur-md">
+                      <div className="text-xl font-semibold">{title}</div>
+                      <div className="text-sm text-slate-300">{callStatus === 'connected' ? 'Connected call' : remoteSubtitle}</div>
+                    </div>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {isRecording && <div className="inline-flex items-center gap-2 rounded-full bg-rose-500 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em]"><CircleDot size={14} /> Recording {formatDuration(recordingSeconds)}</div>}
+                      {remoteMediaState.isRecording && <div className="inline-flex items-center gap-2 rounded-full bg-amber-500/90 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-950"><CircleDot size={14} /> They&apos;re recording</div>}
+                      {remoteLocation && <a href={`https://www.google.com/maps?q=${remoteLocation.lat},${remoteLocation.lng}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/35 px-3 py-1 text-xs text-slate-100 backdrop-blur-md"><MapPin size={14} /> Open shared location</a>}
+                    </div>
+                  </div>
+                </section>
+
+                <aside className="grid gap-4 xl:grid-rows-[auto_auto_1fr]">
+                  <div className="rounded-[2rem] border border-white/10 bg-white/5 p-4 backdrop-blur-xl">
+                    <div className="mb-3 flex items-center justify-between">
+                      <div>
+                        <div className="text-sm font-semibold">Your preview</div>
+                        <div className="text-xs text-slate-400">{isScreenSharing ? 'Sharing your screen' : isCameraEnabled ? 'Camera ready' : 'Camera off'}</div>
+                      </div>
+                      {recordingUrl && <a href={recordingUrl} download="call-recording.webm" className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-1 text-xs text-slate-200 transition hover:bg-white/10"><Download size={14} /> Download</a>}
+                    </div>
+                    <div className="aspect-[4/3] overflow-hidden rounded-[1.6rem] border border-white/10 bg-slate-900">
+                      <VideoSurface stream={previewStream} fallbackAvatar={authUser?.profilePicture || '/avatar.png'} title="You" subtitle={isRecording ? `Recording ${formatDuration(recordingSeconds)}` : 'Local preview'} muted mirrored={!isScreenSharing} />
+                    </div>
+                  </div>
+
+                  <div className="rounded-[2rem] border border-white/10 bg-white/5 p-4 backdrop-blur-xl">
+                    <div className="mb-3 flex items-center justify-between">
+                      <div>
+                        <div className="text-sm font-semibold">Call tools</div>
+                        <div className="text-xs text-slate-400">Desktop command center for video calling.</div>
+                      </div>
+                      <div className="rounded-full border border-white/10 px-3 py-1 text-xs text-slate-300">{callStatus}</div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      {renderToolButtons(false)}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[2rem] border border-white/10 bg-white/5 p-4 backdrop-blur-xl">
+                    <div className="mb-3 text-sm font-semibold">Live status</div>
+                    <div className="grid gap-2 text-sm text-slate-200">
+                      <div className="flex items-center justify-between rounded-2xl bg-black/20 px-3 py-2"><span>You</span><span>{isMuted ? 'Muted' : 'Mic on'} • {isCameraEnabled ? 'Camera on' : 'Camera off'}</span></div>
+                      <div className="flex items-center justify-between rounded-2xl bg-black/20 px-3 py-2"><span>{title}</span><span>{remoteMediaState.isMuted ? 'Muted' : 'Mic on'} • {remoteMediaState.isCameraEnabled ? 'Camera on' : 'Camera off'}</span></div>
+                      <div className="rounded-2xl bg-black/20 px-3 py-2 text-xs text-slate-300">Desktop keeps tools, preview, and live status in dedicated side panels while mobile switches to an overlay-first interface for thumb-friendly controls.</div>
+                    </div>
+                  </div>
+                </aside>
               </div>
-            </aside>
-          </div>
+            </div>
+          )}
         </div>
       </div>
       <MissedCallsPanel missedCalls={missedCalls} clearMissedCalls={clearMissedCalls} />
