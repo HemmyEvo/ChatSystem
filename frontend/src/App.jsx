@@ -16,6 +16,27 @@ function App() {
     checkAuth();
   }, [checkAuth]);
 
+
+  useEffect(() => {
+    const syncViewportHeight = () => {
+      const viewport = window.visualViewport;
+      const height = viewport?.height || window.innerHeight;
+      const keyboardOffset = Math.max(0, window.innerHeight - height - (viewport?.offsetTop || 0));
+      document.documentElement.style.setProperty('--app-height', `${height}px`);
+      document.documentElement.style.setProperty('--keyboard-offset', `${keyboardOffset}px`);
+    };
+
+    syncViewportHeight();
+    window.visualViewport?.addEventListener('resize', syncViewportHeight);
+    window.visualViewport?.addEventListener('scroll', syncViewportHeight);
+    window.addEventListener('resize', syncViewportHeight);
+    return () => {
+      window.visualViewport?.removeEventListener('resize', syncViewportHeight);
+      window.visualViewport?.removeEventListener('scroll', syncViewportHeight);
+      window.removeEventListener('resize', syncViewportHeight);
+    };
+  }, []);
+
   useEffect(() => {
     const handleVisibility = () => {
       if (!socket?.connected) return;
@@ -60,7 +81,7 @@ function App() {
   if (isCheckingAuth) return <PageLoader />;
 
   return (
-    <div className='min-h-screen bg-slate-900 relative flex items-center justify-center  overflow-hidden'>
+    <div className='min-h-screen bg-slate-900 relative flex items-center justify-center overflow-hidden' style={{ minHeight: 'var(--app-height, 100dvh)' }}>
       <div className='absolute inset-0  bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-[size:14px_24px]' />
       <div className='absolute top-0 -left-4 size-96 bg-pink-500 opacity-20 blur-[100px]' />
       <div className='absolute bottom-0 -right-4 size-96 bg-cyan-500 opacity-20 blur-[100px]' />

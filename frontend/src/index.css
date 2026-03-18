@@ -30,3 +30,15 @@
 .auth-link{
     @apply px-4 py-2 inline-block bg-cyan-500/10 rounded-lg text-cyan-400 hover:text-cyan-500 text-sm transition-colors;
 }
+:root {
+  --app-height: 100dvh;
+  --keyboard-offset: 0px;
+}
+
+body {
+  min-height: var(--app-height);
+}
+
+#root {
+  min-height: var(--app-height);
+}
