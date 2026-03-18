@@ -63,8 +63,8 @@ const playerColorSets = [
 const colorOffsets = {
   red: 0,
   green: 13,
-  yellow: 26,
-  blue: 39,
+  yellow: 39,
+  blue: 26,
 };
 
 const createPlayerTokens = (colors) => colors.flatMap((color) => Array.from({ length: 4 }, () => ({ color, pos: -1 })));
@@ -78,6 +78,7 @@ const initLudoState = (players) => ({
   diceValues: [],
   hasBonusRoll: false,
   winnerId: null,
+  lastMove: null,
 });
 
 const nextPlayer = (players, current) => players[(players.indexOf(current) + 1) % players.length];
@@ -132,6 +133,7 @@ const buildPublicState = (session, viewerId) => {
     winnerId: session.state.winnerId,
     players: session.players,
     availableDice: session.state.diceValues,
+    lastMove: session.state.lastMove,
   };
 };
 
@@ -288,23 +290,42 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
         nextPos = token.pos + diceValues[usableDieIndex];
       }
 
+      const previousPos = token.pos;
       token.pos = nextPos;
       diceToConsume.sort((a, b) => b - a).forEach((dieIndex) => {
         session.state.diceValues.splice(dieIndex, 1);
       });
 
+      const capturedTokens = [];
       const myUniversalPos = getUniversalPos(token.pos, token.color);
 
       if (myUniversalPos !== -1 && !ludoSafeSpots.has(myUniversalPos)) {
         const opponentId = session.players.find((id) => id !== playerId);
         const opponentTokens = session.state.tokens[opponentId];
 
-        opponentTokens.forEach((oppToken) => {
+        opponentTokens.forEach((oppToken, opponentTokenIndex) => {
           if (getUniversalPos(oppToken.pos, oppToken.color) === myUniversalPos) {
+            capturedTokens.push({
+              playerId: opponentId,
+              tokenIndex: opponentTokenIndex,
+              color: oppToken.color,
+              fromPos: oppToken.pos,
+            });
             oppToken.pos = -1;
           }
         });
       }
+
+      session.state.lastMove = {
+        id: crypto.randomUUID(),
+        playerId,
+        tokenIndex,
+        color: token.color,
+        fromPos: previousPos,
+        toPos: token.pos,
+        capturedTokens,
+        reachedHome: token.pos === 57,
+      };
 
       if (playerTokens.every((playerToken) => playerToken.pos === 57)) {
         session.state.winnerId = playerId;

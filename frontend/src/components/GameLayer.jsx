@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/purity */
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { BellRing, PhoneMissed } from 'lucide-react';
 import { useGameStore } from '../store/useGameStore';
 import { useAuthStore } from '../store/useAuthStore';
@@ -110,9 +110,12 @@ const getTokenColorClass = (color) => ({
 
 const LudoToken = ({ color, targetPathIndex, pathArray, homePos, completedPos, stackOffset, isMine, onClick, disabled, isSelected }) => {
   const [displayIndex, setDisplayIndex] = useState(targetPathIndex);
+  const isJumping = displayIndex !== targetPathIndex;
 
   useEffect(() => {
-    if (displayIndex === targetPathIndex) return undefined;
+    if (displayIndex === targetPathIndex) {
+      return undefined;
+    }
 
     const nextStep = targetPathIndex === -1
       ? -1
@@ -120,7 +123,7 @@ const LudoToken = ({ color, targetPathIndex, pathArray, homePos, completedPos, s
         ? displayIndex + 1
         : displayIndex - 1;
 
-    const timer = setTimeout(() => setDisplayIndex(nextStep), targetPathIndex === -1 ? 0 : 120);
+    const timer = setTimeout(() => setDisplayIndex(nextStep), targetPathIndex === -1 ? 180 : 120);
     return () => clearTimeout(timer);
   }, [displayIndex, targetPathIndex]);
 
@@ -137,7 +140,7 @@ const LudoToken = ({ color, targetPathIndex, pathArray, homePos, completedPos, s
 
   return (
     <div
-      className="absolute z-20 transition-all duration-150 ease-linear"
+      className={`absolute z-20 transition-all duration-300 ease-out ${isJumping ? 'animate-bounce' : ''}`}
       style={{ left: `${position.x}%`, top: `${position.y}%`, transform: 'translate(-50%, -50%)' }}
     >
       <button
@@ -164,6 +167,9 @@ const NigerianLudoBoard = ({ game, onMove, onRoll, selectedDieIndex, onSelectDie
   const [diceRolling, setDiceRolling] = useState(false);
   const [dice1, setDice1] = useState(1);
   const [dice2, setDice2] = useState(1);
+  const lastMoveSoundIdRef = useRef(null);
+  const moveSoundRef = useRef(null);
+  const captureSoundRef = useRef(null);
 
   const getCoord = (col, row) => ({ x: ((col + 0.5) / 15) * 100, y: ((row + 0.5) / 15) * 100 });
   const getCellCenter = (col, row) => ({ x: ((col + 0.5) / 15) * 100, y: ((row + 0.5) / 15) * 100 });
@@ -180,8 +186,8 @@ const NigerianLudoBoard = ({ game, onMove, onRoll, selectedDieIndex, onSelectDie
   const ludoPath = {
     red: redPath,
     green: rotatePath(redPath, 13),
-    yellow: rotatePath(redPath, 26),
-    blue: rotatePath(redPath, 39),
+    yellow: rotatePath(redPath, 39),
+    blue: rotatePath(redPath, 26),
   };
 
   const homePositions = {
@@ -200,6 +206,33 @@ const NigerianLudoBoard = ({ game, onMove, onRoll, selectedDieIndex, onSelectDie
   ];
 
   const availableDice = [game.diceValue1, game.diceValue2].filter((value) => value !== null && value !== undefined);
+
+  useEffect(() => {
+    moveSoundRef.current = new Audio('/sounds/mouse-click.mp3');
+    captureSoundRef.current = new Audio('/sounds/notification.mp3');
+
+    return () => {
+      moveSoundRef.current = null;
+      captureSoundRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!game.lastMove?.id || lastMoveSoundIdRef.current === game.lastMove.id) return;
+    lastMoveSoundIdRef.current = game.lastMove.id;
+
+    moveSoundRef.current?.pause();
+    if (moveSoundRef.current) {
+      moveSoundRef.current.currentTime = 0;
+      moveSoundRef.current.play().catch(() => {});
+    }
+
+    if (game.lastMove.capturedTokens?.length && captureSoundRef.current) {
+      captureSoundRef.current.pause();
+      captureSoundRef.current.currentTime = 0;
+      captureSoundRef.current.play().catch(() => {});
+    }
+  }, [game.lastMove]);
 
   useEffect(() => {
     if (!myTurn || availableDice.length <= 1) {
@@ -494,18 +527,27 @@ export default function GameLayer() {
             <div className="text-5xl mb-4">⚠️</div>
             <h3 className="text-2xl font-black mb-3">Game room restored after refresh</h3>
             <p className="text-sm text-red-100/90 mb-6">
-              You came back while this game room was still active. You must forfeit this match before leaving the popup.
+              You came back while this game room was still active. Forfeit the match if you want to leave, or resume to jump back in.
             </p>
-            <button
-              type="button"
-              onClick={() => {
-                dismissRoomRecovery();
-                forfeitGame();
-              }}
-              className="w-full px-5 py-3 rounded-full bg-red-500 hover:bg-red-400 font-black text-lg transition"
-            >
-              Forfeit Game
-            </button>
+            <div className="flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  dismissRoomRecovery();
+                  forfeitGame();
+                }}
+                className="w-full px-5 py-3 rounded-full bg-red-500 hover:bg-red-400 font-black text-lg transition"
+              >
+                Forfeit Game
+              </button>
+              <button
+                type="button"
+                onClick={dismissRoomRecovery}
+                className="w-full px-5 py-3 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-lg transition"
+              >
+                Resume Game
+              </button>
+            </div>
           </div>
         </div>
       )}
