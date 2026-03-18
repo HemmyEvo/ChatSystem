@@ -1,4 +1,4 @@
-import React from 'react';
+import {useEffect} from 'react';
 import BorderAnimated from '../components/BorderAnimated.jsx';
 import ProfileHeader from '../components/ProfileHeader.jsx';
 import ActiveTabSwitch from '../components/ActiveTabSwitch.jsx';
