@@ -152,11 +152,20 @@ export const authController = {
     },
 
     logout: (_, res) => {
-        res.clearCookie('token', {
+        const clearOptions = {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             sameSite: 'strict',
-        });
+            path: '/',
+        };
+
+        res.clearCookie('token', clearOptions);
+
+        if (process.env.NODE_ENV !== 'production') {
+            res.clearCookie('token', { ...clearOptions, domain: 'localhost' });
+            res.clearCookie('token', { ...clearOptions, domain: '.localhost' });
+        }
+
         res.status(200).json({ message: 'Logout successful' });
     },
 
