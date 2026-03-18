@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/purity */
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BellRing, PhoneMissed } from 'lucide-react';
 import { useGameStore } from '../store/useGameStore';
 import { useAuthStore } from '../store/useAuthStore';
@@ -110,37 +110,64 @@ const getTokenColorClass = (color) => ({
 
 const LudoToken = ({ color, targetPathIndex, pathArray, homePos, completedPos, stackOffset, isMine, onClick, disabled, isSelected }) => {
   const [displayIndex, setDisplayIndex] = useState(targetPathIndex);
-  const isJumping = displayIndex !== targetPathIndex;
-
-  useEffect(() => {
-    if (displayIndex === targetPathIndex) {
-      return undefined;
-    }
-
-    const nextStep = targetPathIndex === -1
-      ? -1
-      : displayIndex < targetPathIndex
-        ? displayIndex + 1
-        : displayIndex - 1;
-
-    const timer = setTimeout(() => setDisplayIndex(nextStep), targetPathIndex === -1 ? 180 : 120);
-    return () => clearTimeout(timer);
-  }, [displayIndex, targetPathIndex]);
-
-  const position = useMemo(() => {
-    if (displayIndex === -1) return homePos;
-    if (displayIndex >= 57) {
+  const [position, setPosition] = useState(() => {
+    if (targetPathIndex === -1 || targetPathIndex === -2) return homePos;
+    if (targetPathIndex >= 57) {
       return {
         x: completedPos.x + stackOffset.x,
         y: completedPos.y + stackOffset.y,
       };
     }
-    return pathArray[displayIndex] || { x: 50, y: 50 };
-  }, [completedPos, displayIndex, homePos, pathArray, stackOffset]);
+    return pathArray[targetPathIndex] || { x: 50, y: 50 };
+  });
+  const isMovingAlongTrack = displayIndex !== targetPathIndex && displayIndex >= 0 && targetPathIndex >= 0;
+
+  useEffect(() => {
+    if (targetPathIndex === -2 || targetPathIndex === -1) {
+      const timer = setTimeout(() => {
+        setDisplayIndex(targetPathIndex);
+        setPosition(homePos);
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+
+    if (targetPathIndex >= 57) {
+      const timer = setTimeout(() => {
+        setDisplayIndex(targetPathIndex);
+        setPosition({
+          x: completedPos.x + stackOffset.x,
+          y: completedPos.y + stackOffset.y,
+        });
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+
+    if (displayIndex < 0 || displayIndex >= 57) {
+      const timer = setTimeout(() => {
+        setDisplayIndex(targetPathIndex);
+        setPosition(pathArray[targetPathIndex] || { x: 50, y: 50 });
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+
+    if (displayIndex === targetPathIndex) {
+      const timer = setTimeout(() => {
+        setPosition(pathArray[displayIndex] || { x: 50, y: 50 });
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+
+    const nextStep = displayIndex < targetPathIndex ? displayIndex + 1 : displayIndex - 1;
+    const timer = setTimeout(() => {
+      setDisplayIndex(nextStep);
+      setPosition(pathArray[nextStep] || { x: 50, y: 50 });
+    }, 110);
+    return () => clearTimeout(timer);
+  }, [completedPos, displayIndex, homePos, pathArray, stackOffset, targetPathIndex]);
 
   return (
     <div
-      className={`absolute z-20 transition-all duration-300 ease-out ${isJumping ? 'animate-bounce' : ''}`}
+      className={`absolute z-20 transition-[left,top] ${isMovingAlongTrack ? 'duration-100 ease-linear' : 'duration-220 ease-out'}`}
       style={{ left: `${position.x}%`, top: `${position.y}%`, transform: 'translate(-50%, -50%)' }}
     >
       <button
@@ -326,6 +353,8 @@ const NigerianLudoBoard = ({ game, onMove, onRoll, selectedDieIndex, onSelectDie
             const completedColorCounts = {};
 
             return tokenPositions.map((token, tokenIdx) => {
+              if (token.pos === -2) return null;
+
               const color = token.color;
               const colorIndex = colorCounts[color] || 0;
               colorCounts[color] = colorIndex + 1;
