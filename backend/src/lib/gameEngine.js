@@ -5,17 +5,24 @@ const pendingInvites = new Map();
 
 // --- WHOT MECHANICS ---
 const suits = ['circle', 'triangle', 'cross', 'star', 'square'];
-const whotNumbers = [1, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14];
+const actionNumbers = new Set([1, 2, 5, 8, 14]);
+const numberedCardsBySuit = {
+  circle: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+  triangle: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+  cross: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+  square: [1, 2, 3, 5, 7, 10, 11, 13, 14],
+  star: [1, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14],
+};
 
 const createWhotDeck = () => {
   const deck = [];
   suits.forEach((suit) => {
-    whotNumbers.forEach((number) => {
+    numberedCardsBySuit[suit].forEach((number) => {
       deck.push({ id: `${suit}-${number}-${crypto.randomUUID()}`, suit, number, label: `${number}` });
     });
   });
 
-  for (let i = 0; i < 5; i += 1) {
+  for (let i = 0; i < 4; i += 1) {
     deck.push({ id: `whot-20-${i}-${crypto.randomUUID()}`, suit: 'whot', number: 20, label: 'WHOT' });
   }
 
@@ -27,19 +34,20 @@ const initWhotState = (players) => {
   const hands = {};
 
   players.forEach((playerId) => {
-    hands[playerId] = deck.splice(0, 6);
+    hands[playerId] = deck.splice(0, 5);
   });
 
   let top = deck.shift();
-  while (top?.suit === 'whot' && deck.length) top = deck.shift();
+  while ((top?.suit === 'whot' || actionNumbers.has(top?.number)) && deck.length) {
+    deck.push(top);
+    top = deck.shift();
+  }
 
   return {
     deck,
     discard: [top],
     hands,
     currentPlayer: players[0],
-    pendingDraw: 0,
-    skipNext: false,
     requestedSuit: null,
     winnerId: null,
   };
@@ -110,7 +118,6 @@ const buildPublicState = (session, viewerId) => {
       gameType: session.gameType,
       status: session.status,
       currentPlayer: session.state.currentPlayer,
-      pendingDraw: session.state.pendingDraw,
       requestedSuit: session.state.requestedSuit,
       topCard: session.state.discard[session.state.discard.length - 1],
       myHand: session.state.hands[viewerId] || [],
@@ -181,11 +188,10 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
 
     if (action.type === 'draw') {
       if (!session.state.deck.length) return { error: 'Deck is empty.' };
-      const drawCount = Math.max(1, session.state.pendingDraw || 1);
-      for (let i = 0; i < drawCount && session.state.deck.length; i += 1) {
-        hand.push(session.state.deck.shift());
+      if (hand.some((card) => canPlayWhotCard({ card, topCard, requestedSuit: session.state.requestedSuit }))) {
+        return { error: 'You already have a valid move.' };
       }
-      session.state.pendingDraw = 0;
+      hand.push(session.state.deck.shift());
       session.state.requestedSuit = null;
       session.state.currentPlayer = nextPlayer(session.players, playerId);
     } else if (action.type === 'play') {
@@ -202,20 +208,26 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
 
       hand.splice(cardIndex, 1);
       session.state.discard.push(card);
-      session.state.requestedSuit = card.number === 20 ? action.requestedSuit : null;
-      if (card.number === 2) session.state.pendingDraw += 2;
-      if (card.number === 5) session.state.pendingDraw += 3;
-      if (card.number === 8) session.state.skipNext = true;
+      session.state.requestedSuit = null;
 
       if (!hand.length) {
         session.state.winnerId = playerId;
         session.status = 'completed';
-      } else if (card.number === 1) {
+      } else if (card.number === 20) {
+        session.state.requestedSuit = action.requestedSuit;
+        session.state.currentPlayer = nextPlayer(session.players, playerId);
+      } else if (actionNumbers.has(card.number)) {
+        const opponentId = nextPlayer(session.players, playerId);
+        const opponentHand = session.state.hands[opponentId];
+        const drawCount = card.number === 2 ? 2 : card.number === 5 ? 3 : card.number === 14 ? 1 : 0;
+
+        for (let i = 0; i < drawCount && session.state.deck.length; i += 1) {
+          opponentHand.push(session.state.deck.shift());
+        }
+
         session.state.currentPlayer = playerId;
       } else {
-        const next = nextPlayer(session.players, playerId);
-        session.state.currentPlayer = session.state.skipNext ? nextPlayer(session.players, next) : next;
-        session.state.skipNext = false;
+        session.state.currentPlayer = nextPlayer(session.players, playerId);
       }
     } else {
       return { error: 'Unsupported action.' };

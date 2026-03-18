@@ -479,6 +479,11 @@ const NigerianWhotView = ({ game, onPlayCard, onDraw }) => {
   const myTurn = game.currentPlayer === me;
   const [showSuitSelector, setShowSuitSelector] = useState(false);
   const [selectedCardId, setSelectedCardId] = useState(null);
+  const hasPlayableCard = game.myHand.some((card) => {
+    if (card.suit === 'whot') return true;
+    if (game.requestedSuit) return card.suit === game.requestedSuit;
+    return card.suit === game.topCard?.suit || card.number === game.topCard?.number;
+  });
 
   const isPlayable = (card) => {
     if (!myTurn) return false;
@@ -524,6 +529,14 @@ const NigerianWhotView = ({ game, onPlayCard, onDraw }) => {
             {myTurn ? '🎮 Your Turn' : '⏳ Opponent\'s Turn'}
           </span>
         </div>
+        {game.requestedSuit && (
+          <div className="mt-3 text-center text-sm text-yellow-200">
+            Called shape: <span className="font-bold capitalize">{game.requestedSuit}</span>
+          </div>
+        )}
+        <div className="mt-2 text-center text-xs text-green-100/90">
+          Action cards 1, 2, 5, 8, and 14 keep the turn with the player who dropped them.
+        </div>
       </div>
 
       {showSuitSelector && (
@@ -560,11 +573,14 @@ const NigerianWhotView = ({ game, onPlayCard, onDraw }) => {
       <div className="text-center">
         <button
           onClick={onDraw}
-          disabled={!myTurn}
-          className={`px-8 py-3 rounded-full font-bold text-lg bg-gradient-to-r from-yellow-500 to-yellow-600 text-black transform transition-all ${myTurn ? 'hover:scale-110 hover:shadow-2xl' : 'opacity-50 cursor-not-allowed'}`}
+          disabled={!myTurn || hasPlayableCard}
+          className={`px-8 py-3 rounded-full font-bold text-lg bg-gradient-to-r from-yellow-500 to-yellow-600 text-black transform transition-all ${myTurn && !hasPlayableCard ? 'hover:scale-110 hover:shadow-2xl' : 'opacity-50 cursor-not-allowed'}`}
         >
           🎴 Draw Card
         </button>
+        {myTurn && hasPlayableCard && (
+          <p className="mt-2 text-xs text-yellow-200">You must play a valid card before drawing from the market.</p>
+        )}
       </div>
     </div>
   );
