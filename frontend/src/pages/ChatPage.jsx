@@ -10,6 +10,13 @@ import NoConversationPlacehoder from '../components/NoConversationPlacehoder.jsx
 import GameLayer from '../components/GameLayer.jsx';
 function ChatPage() {
   const {activeTab,selectedUser} = useChatStore();
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (!document.fullscreenElement && root?.requestFullscreen) {
+      root.requestFullscreen().catch(() => {});
+    }
+  }, []);
  
   return (
     <div className="relative w-full max-w-6xl" style={{ height: "var(--app-height, 100dvh)" }}>
