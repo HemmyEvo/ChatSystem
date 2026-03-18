@@ -26,6 +26,18 @@ const userSocketMap = {};
 
 
 const callSessionMap = new Map();
+const callDisconnectTimers = new Map();
+const CALL_REJOIN_GRACE_PERIOD_MS = 30000;
+
+const clearCallDisconnectTimer = (userId) => {
+  const normalizedUserId = userId?.toString();
+  if (!normalizedUserId) return;
+  const timer = callDisconnectTimers.get(normalizedUserId);
+  if (timer) {
+    clearTimeout(timer);
+    callDisconnectTimers.delete(normalizedUserId);
+  }
+};
 
 const findCallSessionByUserId = (userId) => {
   const normalizedUserId = userId?.toString();
@@ -70,6 +82,12 @@ const emitMissedCall = async ({ session, recipientUserId, reason = 'missed' }) =
   });
 };
 
+const emitPeerCallStatus = ({ recipientUserId, status, sessionId }) => {
+  const recipientSocketId = getReceiverSocketId(recipientUserId);
+  if (!recipientSocketId) return;
+  io.to(recipientSocketId).emit('call:peer-status', { status, sessionId });
+};
+
 const getOtherParticipantId = (session, userId) => session?.participants.find((participantId) => participantId !== userId?.toString()) || null;
 
 const loadCallPeer = async (userId) => {
@@ -81,6 +99,12 @@ const loadCallPeer = async (userId) => {
 const emitCallResumeIfNeeded = async (socket, userId) => {
   const session = findCallSessionByUserId(userId);
   if (!session) return;
+  clearCallDisconnectTimer(userId);
+  if (session.status === 'reconnecting') {
+    session.status = 'active';
+    const otherUserId = getOtherParticipantId(session, userId);
+    emitPeerCallStatus({ recipientUserId: otherUserId, status: 'connected', sessionId: session.id });
+  }
   const otherUserId = getOtherParticipantId(session, userId);
   const otherUser = await loadCallPeer(otherUserId);
   if (!otherUser) return;
@@ -94,10 +118,11 @@ const emitCallResumeIfNeeded = async (socket, userId) => {
 };
 
 const tryRenegotiateCall = (session) => {
-  if (!session || session.status !== 'active') return;
+  if (!session || !['active', 'reconnecting'].includes(session.status)) return;
   const callerSocketId = getReceiverSocketId(session.callerId);
   const calleeSocketId = getReceiverSocketId(session.calleeId);
   if (!(callerSocketId && calleeSocketId)) return;
+  session.status = 'active';
   io.to(callerSocketId).emit('call:renegotiate', { toUserId: session.calleeId, media: session.media, sessionId: session.id });
 };
 
@@ -395,6 +420,8 @@ io.on('connection', async (socket) => {
   socket.on('call:accept', ({ toUserId, media, sessionId }) => {
     const session = callSessionMap.get(sessionId) || findCallSessionByUserId(userId);
     if (!session || !session.participants.includes(toUserId?.toString())) return;
+    clearCallDisconnectTimer(userId);
+    clearCallDisconnectTimer(toUserId);
     session.status = 'active';
     session.media = { video: Boolean(media?.video) };
 
@@ -406,6 +433,8 @@ io.on('connection', async (socket) => {
 
   socket.on('call:decline', async ({ toUserId, sessionId }) => {
     const session = callSessionMap.get(sessionId) || findCallSessionByUserId(userId);
+    clearCallDisconnectTimer(userId);
+    clearCallDisconnectTimer(toUserId);
     const removedSession = session ? removeCallSession(session.id) : null;
     const receiverSocketId = getReceiverSocketId(toUserId);
     if (receiverSocketId) io.to(receiverSocketId).emit('call:declined', { fromUserId: userId });
@@ -416,6 +445,8 @@ io.on('connection', async (socket) => {
 
   socket.on('call:end', ({ toUserId, sessionId }) => {
     const session = callSessionMap.get(sessionId) || findCallSessionByUserId(userId);
+    clearCallDisconnectTimer(userId);
+    clearCallDisconnectTimer(toUserId);
     if (session) removeCallSession(session.id);
     const receiverSocketId = getReceiverSocketId(toUserId);
     if (receiverSocketId) io.to(receiverSocketId).emit('call:ended', { fromUserId: userId });
@@ -435,6 +466,18 @@ io.on('connection', async (socket) => {
     });
   });
 
+  socket.on('call:aux', ({ toUserId, sessionId, payload }) => {
+    const session = callSessionMap.get(sessionId) || findCallSessionByUserId(userId);
+    if (!session || !session.participants.includes(toUserId?.toString())) return;
+    const receiverSocketId = getReceiverSocketId(toUserId);
+    if (!receiverSocketId) return;
+    io.to(receiverSocketId).emit('call:aux', {
+      sessionId: session.id,
+      fromUserId: userId,
+      payload,
+    });
+  });
+
   socket.on('call:resume:request', async () => {
     await emitCallResumeIfNeeded(socket, userId);
   });
@@ -442,6 +485,7 @@ io.on('connection', async (socket) => {
   socket.on('call:rejoin', ({ sessionId }) => {
     const session = callSessionMap.get(sessionId) || findCallSessionByUserId(userId);
     if (!session) return;
+    clearCallDisconnectTimer(userId);
     tryRenegotiateCall(session);
   });
 
@@ -480,10 +524,24 @@ io.on('connection', async (socket) => {
       const otherSocketId = getReceiverSocketId(otherUserId);
       if (activeCall.status === 'ringing') {
         await emitMissedCall({ session: activeCall, recipientUserId: otherUserId, reason: 'missed' });
-      }
-      removeCallSession(activeCall.id);
-      if (otherSocketId) {
-        io.to(otherSocketId).emit(activeCall.status === 'active' ? 'call:ended' : 'call:declined', { fromUserId: userId });
+        removeCallSession(activeCall.id);
+        if (otherSocketId) io.to(otherSocketId).emit('call:declined', { fromUserId: userId });
+      } else if (activeCall.status === 'active') {
+        activeCall.status = 'reconnecting';
+        emitPeerCallStatus({ recipientUserId: otherUserId, status: 'inactive', sessionId: activeCall.id });
+        clearCallDisconnectTimer(userId);
+        const disconnectTimer = setTimeout(() => {
+          const session = callSessionMap.get(activeCall.id);
+          if (!session || session.status !== 'reconnecting') return;
+          removeCallSession(activeCall.id);
+          callDisconnectTimers.delete(userId);
+          const stillConnectedSocketId = getReceiverSocketId(otherUserId);
+          if (stillConnectedSocketId) io.to(stillConnectedSocketId).emit('call:ended', { fromUserId: userId });
+        }, CALL_REJOIN_GRACE_PERIOD_MS);
+        callDisconnectTimers.set(userId, disconnectTimer);
+      } else {
+        removeCallSession(activeCall.id);
+        if (otherSocketId) io.to(otherSocketId).emit('call:declined', { fromUserId: userId });
       }
     }
     await updateUserLastSeen(userId);

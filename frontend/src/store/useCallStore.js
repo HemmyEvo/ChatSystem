@@ -5,6 +5,7 @@ import { useAuthStore } from './useAuthStore';
 const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
 const DRAW_HISTORY_LIMIT = 250;
 const MISSED_CALL_LIMIT = 20;
+const CALL_SESSION_STORAGE_KEY = 'activeCallSession';
 
 const makeEmptyStroke = ({ color = '#22d3ee', width = 3 } = {}) => ({
   id: `stroke-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -22,6 +23,37 @@ const buildMissedCall = (payload = {}) => ({
   createdAt: payload.createdAt || Date.now(),
   fromUser: payload.fromUser || null,
 });
+
+const persistCallSession = (payload) => {
+  if (typeof window === 'undefined') return;
+  if (!payload?.sessionId || !payload?.otherUser?._id) {
+    window.sessionStorage.removeItem(CALL_SESSION_STORAGE_KEY);
+    return;
+  }
+  window.sessionStorage.setItem(CALL_SESSION_STORAGE_KEY, JSON.stringify(payload));
+};
+
+const readPersistedCallSession = () => {
+  if (typeof window === 'undefined') return null;
+  try {
+    return JSON.parse(window.sessionStorage.getItem(CALL_SESSION_STORAGE_KEY) || 'null');
+  } catch (error) {
+    console.warn('Failed to read saved call session:', error);
+    return null;
+  }
+};
+
+const attachStreamToElement = async (element, stream, { muted = false } = {}) => {
+  if (!element) return;
+  element.srcObject = stream || null;
+  element.muted = muted;
+  if (!stream) return;
+  try {
+    await element.play?.();
+  } catch (error) {
+    console.debug('Media playback will retry after user interaction.', error);
+  }
+};
 
 export const useCallStore = create((set, get) => ({
   localStream: null,
@@ -51,6 +83,9 @@ export const useCallStore = create((set, get) => ({
   drawingWidth: 3,
   localDrawStroke: null,
   missedCalls: [],
+  connectionQuality: 'idle',
+  peerConnectionState: 'new',
+  lastPersistedSessionId: null,
 
   pushMissedCall: (payload) => {
     const missedCall = buildMissedCall(payload);
@@ -61,10 +96,55 @@ export const useCallStore = create((set, get) => ({
   },
   clearMissedCalls: () => set({ missedCalls: [] }),
 
+  persistCurrentCall: () => {
+    const { sessionId, activeCallUser, callMode, callStatus } = get();
+    if (!sessionId || !activeCallUser?._id || !['calling', 'connecting', 'connected', 'reconnecting'].includes(callStatus)) {
+      persistCallSession(null);
+      set({ lastPersistedSessionId: null });
+      return;
+    }
+    persistCallSession({
+      sessionId,
+      otherUser: activeCallUser,
+      media: { video: callMode === 'video' },
+      callStatus,
+      savedAt: Date.now(),
+    });
+    set({ lastPersistedSessionId: sessionId });
+  },
+
+  clearPersistedCall: () => {
+    persistCallSession(null);
+    set({ lastPersistedSessionId: null });
+  },
+
+  getConnectionLabel: () => {
+    const { callStatus, connectionQuality } = get();
+    if (callStatus === 'connected') {
+      if (connectionQuality === 'unstable') return 'Unstable connection';
+      return 'Connected';
+    }
+    if (callStatus === 'reconnecting') return 'User inactive';
+    if (callStatus === 'calling') return 'Calling';
+    if (callStatus === 'ringing') return 'Incoming call';
+    if (callStatus === 'connecting') return 'Connecting';
+    return 'Preparing media';
+  },
+
   notifyPeer: (payload) => {
     const dataChannel = get().dataChannel;
     if (get().callMode !== 'video') return;
-    if (dataChannel?.readyState === 'open') dataChannel.send(JSON.stringify(payload));
+    if (dataChannel?.readyState === 'open') {
+      dataChannel.send(JSON.stringify(payload));
+      return true;
+    }
+    const socket = useAuthStore.getState().socket;
+    const activeCallUser = get().activeCallUser;
+    if (socket?.connected && activeCallUser?._id && get().sessionId) {
+      socket.emit('call:aux', { toUserId: activeCallUser._id, sessionId: get().sessionId, payload });
+      return true;
+    }
+    return false;
   },
 
   syncMediaState: () => {
@@ -145,7 +225,10 @@ export const useCallStore = create((set, get) => ({
       recordingSeconds: 0,
       recordingUrl: null,
       recordingError: '',
+      connectionQuality: 'idle',
+      peerConnectionState: 'new',
     });
+    get().clearPersistedCall();
   },
 
   ensureLocalStream: async ({ audio = true, video = false } = {}) => {
@@ -169,18 +252,22 @@ export const useCallStore = create((set, get) => ({
     return stream;
   },
 
+  handleAuxMessage: (parsed) => {
+    if (!parsed?.type) return;
+    if (parsed.type === 'media-state') set({ remoteMediaState: { ...get().remoteMediaState, ...parsed.payload } });
+    if (parsed.type === 'location') set({ remoteLocation: parsed.payload });
+    if (parsed.type === 'drawing:stroke') set((state) => ({ collaborativePaths: [...state.collaborativePaths, parsed.payload].slice(-DRAW_HISTORY_LIMIT) }));
+    if (parsed.type === 'drawing:clear') set({ collaborativePaths: [] });
+    if (parsed.type === 'pointer') set({ remotePointer: parsed.payload });
+  },
+
   attachRemoteDataChannel: (channel) => {
     if (!channel) return;
     channel.onopen = () => get().syncMediaState();
     channel.onclose = () => set({ dataChannel: null });
     channel.onmessage = (event) => {
       try {
-        const parsed = JSON.parse(event.data);
-        if (parsed.type === 'media-state') set({ remoteMediaState: { ...get().remoteMediaState, ...parsed.payload } });
-        if (parsed.type === 'location') set({ remoteLocation: parsed.payload });
-        if (parsed.type === 'drawing:stroke') set((state) => ({ collaborativePaths: [...state.collaborativePaths, parsed.payload].slice(-DRAW_HISTORY_LIMIT) }));
-        if (parsed.type === 'drawing:clear') set({ collaborativePaths: [] });
-        if (parsed.type === 'pointer') set({ remotePointer: parsed.payload });
+        get().handleAuxMessage(JSON.parse(event.data));
       } catch (error) {
         console.error('Failed to parse call collaboration message:', error);
       }
@@ -200,12 +287,37 @@ export const useCallStore = create((set, get) => ({
     if (get().callMode === 'video' && createDataChannel) get().attachRemoteDataChannel(peerConnection.createDataChannel('collaboration'));
 
     peerConnection.ondatachannel = (event) => get().attachRemoteDataChannel(event.channel);
+    const syncConnectionState = () => {
+      const nextState = peerConnection.connectionState || peerConnection.iceConnectionState || 'new';
+      let nextCallStatus = get().callStatus;
+      let nextConnectionQuality = get().connectionQuality;
+      if (['connected', 'completed'].includes(peerConnection.iceConnectionState) || nextState === 'connected') {
+        nextCallStatus = 'connected';
+        nextConnectionQuality = 'connected';
+      } else if (['disconnected', 'failed'].includes(peerConnection.iceConnectionState) || ['disconnected', 'failed'].includes(nextState)) {
+        nextCallStatus = 'reconnecting';
+        nextConnectionQuality = 'unstable';
+      } else if (['checking', 'connecting'].includes(peerConnection.iceConnectionState) || nextState === 'connecting') {
+        nextCallStatus = 'connecting';
+        nextConnectionQuality = 'checking';
+      }
+      set({ callStatus: nextCallStatus, connectionQuality: nextConnectionQuality, peerConnectionState: nextState });
+      get().persistCurrentCall();
+    };
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) socket?.emit('call:signal', { toUserId: targetUserId, candidate: event.candidate });
     };
+    peerConnection.onconnectionstatechange = syncConnectionState;
+    peerConnection.oniceconnectionstatechange = syncConnectionState;
     peerConnection.ontrack = (event) => {
+      const [incomingStream] = event.streams || [];
+      if (incomingStream) {
+        set({ remoteStream: incomingStream });
+        return;
+      }
       const nextRemoteStream = get().remoteStream || new MediaStream();
-      nextRemoteStream.addTrack(event.track);
+      const hasTrack = nextRemoteStream.getTracks().some((track) => track.id === event.track.id);
+      if (!hasTrack) nextRemoteStream.addTrack(event.track);
       set({ remoteStream: nextRemoteStream });
     };
 
@@ -222,6 +334,7 @@ export const useCallStore = create((set, get) => ({
     await peerConnection.setLocalDescription(offer);
     socket?.emit('call:signal', { toUserId: targetUserId, description: peerConnection.localDescription });
     set({ callStatus: get().callStatus === 'connected' ? 'reconnecting' : 'connecting' });
+    get().persistCurrentCall();
   },
 
   restoreActiveCall: async ({ sessionId, otherUser, media }) => {
@@ -231,6 +344,7 @@ export const useCallStore = create((set, get) => ({
       await get().ensureLocalStream({ audio: true, video: callMode === 'video' });
       set({ activeCallUser: otherUser, incomingCall: null, callStatus: 'reconnecting', callMode, sessionId });
       useAuthStore.getState().socket?.emit('call:rejoin', { sessionId });
+      get().persistCurrentCall();
     } catch (error) {
       console.error('Failed to restore call:', error);
       toast.error(callMode === 'video' ? 'Camera and microphone access are required to resume the video call.' : 'Microphone access is required to resume the voice call.');
@@ -261,6 +375,7 @@ export const useCallStore = create((set, get) => ({
       await get().ensureLocalStream({ audio: true, video: callMode === 'video' });
       set({ activeCallUser: incomingCall.fromUser, incomingCall: null, callStatus: 'connecting', callMode, sessionId: incomingCall.sessionId || null });
       socket.emit('call:accept', { toUserId: incomingCall.fromUser._id, media: { video: callMode === 'video' }, sessionId: incomingCall.sessionId || null });
+      get().persistCurrentCall();
     } catch (error) {
       console.error('Failed to accept call:', error);
       toast.error(callMode === 'video' ? 'Camera and microphone access are required for video calling.' : 'Microphone access is required for calling.');
@@ -371,10 +486,14 @@ export const useCallStore = create((set, get) => ({
     }
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        get().notifyPeer({ type: 'location', payload: { lat: position.coords.latitude, lng: position.coords.longitude, sharedAt: new Date().toISOString() } });
+        const shared = get().notifyPeer({ type: 'location', payload: { lat: position.coords.latitude, lng: position.coords.longitude, sharedAt: new Date().toISOString() } });
+        if (!shared) {
+          toast.error('Location sharing is temporarily unavailable until the call data link reconnects.');
+          return;
+        }
         toast.success('Location shared in call.');
       },
-      () => toast.error('Location access was denied.'),
+      (error) => toast.error(error?.code === error?.TIMEOUT ? 'Location request timed out.' : 'Location access was denied.'),
       { enableHighAccuracy: true, timeout: 10000 },
     );
   },
@@ -409,7 +528,7 @@ export const useCallStore = create((set, get) => ({
   subscribeToCallEvents: () => {
     const socket = useAuthStore.getState().socket;
     if (!socket) return;
-    ['call:incoming', 'call:accepted', 'call:declined', 'call:ended', 'call:signal', 'call:unavailable', 'call:resume', 'call:renegotiate', 'call:missed'].forEach((event) => socket.off(event));
+    ['call:incoming', 'call:accepted', 'call:declined', 'call:ended', 'call:signal', 'call:unavailable', 'call:resume', 'call:renegotiate', 'call:missed', 'call:aux', 'call:peer-status'].forEach((event) => socket.off(event));
 
     socket.on('call:incoming', ({ fromUserId, fromUser, media, sessionId }) => {
       if (get().activeCallUser?._id || get().incomingCall?.fromUserId) {
@@ -424,6 +543,7 @@ export const useCallStore = create((set, get) => ({
       const activeCallUser = get().activeCallUser;
       if (!activeCallUser || activeCallUser._id !== fromUserId) return;
       set({ callMode: media?.video ? 'video' : 'voice', sessionId: sessionId || get().sessionId });
+      get().persistCurrentCall();
       try {
         await get().createOfferFor(fromUserId);
       } catch (error) {
@@ -446,7 +566,8 @@ export const useCallStore = create((set, get) => ({
             await peerConnection.setLocalDescription(answer);
             socket.emit('call:signal', { toUserId: fromUserId, description: peerConnection.localDescription });
           }
-          set({ callStatus: 'connected' });
+          set({ callStatus: 'connected', connectionQuality: 'connected' });
+          get().persistCurrentCall();
           get().syncMediaState();
         }
         if (candidate) await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
@@ -464,6 +585,12 @@ export const useCallStore = create((set, get) => ({
         return;
       }
       if (status === 'active') await get().restoreActiveCall({ sessionId, otherUser, media });
+      else {
+        const persistedCall = readPersistedCallSession();
+        if (persistedCall?.sessionId === sessionId) {
+          await get().restoreActiveCall({ sessionId, otherUser, media });
+        }
+      }
     });
 
     socket.on('call:renegotiate', async ({ toUserId, media, sessionId }) => {
@@ -485,12 +612,28 @@ export const useCallStore = create((set, get) => ({
       get().cleanupCall();
     });
     socket.on('call:missed', (payload) => get().pushMissedCall(payload));
+    socket.on('call:aux', ({ payload }) => get().handleAuxMessage(payload));
+    socket.on('call:peer-status', ({ status }) => {
+      if (status === 'inactive') {
+        set({ callStatus: 'reconnecting', connectionQuality: 'unstable' });
+        return;
+      }
+      if (status === 'connected') {
+        set((state) => ({ callStatus: state.peerConnection ? 'connecting' : state.callStatus, connectionQuality: 'checking' }));
+      }
+    });
 
     socket.emit('call:resume:request');
+    const persistedCall = readPersistedCallSession();
+    if (persistedCall?.sessionId && persistedCall.otherUser?._id && !get().activeCallUser?._id) {
+      set({ activeCallUser: persistedCall.otherUser, callMode: persistedCall.media?.video ? 'video' : 'voice', sessionId: persistedCall.sessionId, callStatus: 'reconnecting' });
+      socket.emit('call:resume:request');
+    }
   },
 
   unsubscribeFromCallEvents: () => {
     const socket = useAuthStore.getState().socket;
-    ['call:incoming', 'call:accepted', 'call:declined', 'call:ended', 'call:signal', 'call:unavailable', 'call:resume', 'call:renegotiate', 'call:missed'].forEach((event) => socket?.off(event));
+    ['call:incoming', 'call:accepted', 'call:declined', 'call:ended', 'call:signal', 'call:unavailable', 'call:resume', 'call:renegotiate', 'call:missed', 'call:aux', 'call:peer-status'].forEach((event) => socket?.off(event));
   },
+  attachStreamToElement,
 }));
