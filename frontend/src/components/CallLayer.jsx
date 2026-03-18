@@ -111,155 +111,55 @@ function VoiceCallCard({ incomingCall, activeCallUser, remoteStream, callStatus,
     if (audioRef.current) audioRef.current.srcObject = remoteStream || null;
   }, [remoteStream]);
 
-  if (!incomingCall && !activeCallUser) return <audio ref={audioRef} autoPlay playsInline />;
-
   const subtitle = useMemo(() => {
     if (incomingCall) return incomingCall.media?.video === false ? 'Incoming voice call' : 'Incoming video call';
-    if (callStatus === 'connected') return isScreenSharing ? 'Live with screen sharing' : 'Connected in real time';
+    if (callStatus === 'connected') return 'Connected in real time';
+    if (callStatus === 'reconnecting') return 'Reconnecting voice call...';
     if (callStatus === 'calling') return 'Calling...';
     if (callStatus === 'connecting') return 'Connecting secure media...';
     return 'Preparing your call...';
-  }, [callStatus, incomingCall, isScreenSharing]);
+  }, [callStatus, incomingCall]);
 
-  const subtitle = incomingCall
-    ? 'Incoming voice call'
-    : callStatus === 'connected'
-      ? 'Connected in real time'
-      : callStatus === 'reconnecting'
-        ? 'Reconnecting voice call...'
-        : callStatus === 'calling'
-          ? 'Calling...'
-          : 'Connecting audio...';
+  if (!incomingCall && !activeCallUser) return <audio ref={audioRef} autoPlay playsInline />;
 
   const avatar = incomingCall?.fromUser?.profilePicture || activeCallUser?.profilePicture || '/avatar.png';
   const title = incomingCall ? `@${incomingCall.fromUser?.username || 'user'}` : `@${activeCallUser?.username || 'user'}`;
-  const showWorkspace = !incomingCall;
 
   return (
     <div className="fixed inset-0 z-[120] bg-slate-950/85 p-3 text-white backdrop-blur-xl md:p-6">
-      <div className="mx-auto flex h-full max-w-7xl flex-col gap-4 rounded-[32px] border border-white/10 bg-slate-900/75 p-4 shadow-[0_0_80px_rgba(34,211,238,0.12)] md:p-6">
-        <div className="flex items-center justify-between gap-4">
+      <audio ref={audioRef} autoPlay playsInline />
+      <div className="mx-auto flex h-full max-w-4xl flex-col gap-4 rounded-[32px] border border-white/10 bg-slate-900/75 p-4 shadow-[0_0_80px_rgba(34,211,238,0.12)] md:p-6">
+        <div className="flex items-center gap-4">
+          <img src={avatar} alt="caller avatar" className="h-14 w-14 rounded-full object-cover ring-2 ring-cyan-400/30" />
+          <div>
+            <div className="text-xl font-semibold">{title}</div>
+            <div className="text-sm text-slate-300">{subtitle}</div>
+          </div>
+        </div>
+
+        <div className="flex flex-1 flex-col items-center justify-center gap-8 rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top,#22d3ee18,transparent_45%),linear-gradient(160deg,#020617,#0f172a)] p-8 text-center">
+          <img src={avatar} alt="caller" className="h-28 w-28 rounded-full object-cover ring-4 ring-cyan-400/20" />
+          <div>
+            <div className="text-3xl font-semibold">{incomingCall ? `${title} is calling` : title}</div>
+            <div className="mt-2 text-slate-300">{subtitle}</div>
+          </div>
+
           <div className="flex items-center gap-4">
-            <img src={avatar} alt="caller avatar" className="h-14 w-14 rounded-full object-cover ring-2 ring-cyan-400/30" />
-            <div>
-              <div className="text-xl font-semibold">{title}</div>
-              <div className="text-sm text-slate-300">{subtitle}</div>
-            </div>
+            {incomingCall ? (
+              <>
+                <button type="button" onClick={declineCall} className="rounded-full bg-red-500 p-5 text-white transition hover:bg-red-600"><PhoneOff size={24} /></button>
+                <button type="button" onClick={acceptCall} className="rounded-full bg-emerald-500 p-5 text-white transition hover:bg-emerald-600"><Phone size={24} /></button>
+              </>
+            ) : (
+              <>
+                <button type="button" onClick={toggleMute} className="rounded-full bg-slate-800 p-5 text-white transition hover:bg-slate-700">
+                  {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
+                </button>
+                <button type="button" onClick={endCall} className="rounded-full bg-red-500 p-5 text-white transition hover:bg-red-600"><PhoneOff size={24} /></button>
+              </>
+            )}
           </div>
         </div>
-
-        <div className="mt-5 flex items-center justify-center gap-3">
-          {incomingCall ? (
-            <>
-              <button type="button" onClick={declineCall} className="rounded-full bg-red-500 p-4 text-white transition hover:bg-red-600"><PhoneOff size={20} /></button>
-              <button type="button" onClick={acceptCall} className="rounded-full bg-emerald-500 p-4 text-white transition hover:bg-emerald-600"><Phone size={20} /></button>
-            </>
-          ) : (
-            <>
-              <button type="button" onClick={toggleMute} className="rounded-full bg-slate-800 p-4 text-white transition hover:bg-slate-700">
-                {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
-              </button>
-              <button type="button" onClick={endCall} className="rounded-full bg-red-500 p-4 text-white transition hover:bg-red-600"><PhoneOff size={20} /></button>
-            </>
-          )}
-        </div>
-
-        {incomingCall ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-8 rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top,#22d3ee18,transparent_45%),linear-gradient(160deg,#020617,#0f172a)] p-8 text-center">
-            <img src={avatar} alt="incoming caller" className="h-28 w-28 rounded-full object-cover ring-4 ring-cyan-400/20" />
-            <div>
-              <div className="text-3xl font-semibold">{title} is calling</div>
-              <div className="mt-2 text-slate-300">{subtitle}</div>
-            </div>
-            <div className="flex items-center gap-4">
-              <button type="button" onClick={declineCall} className="rounded-full bg-red-500 p-5 text-white transition hover:bg-red-600"><PhoneOff size={24} /></button>
-              <button type="button" onClick={acceptCall} className="rounded-full bg-emerald-500 p-5 text-white transition hover:bg-emerald-600"><Phone size={24} /></button>
-            </div>
-          </div>
-        ) : (
-          <div className="grid flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="grid min-h-0 gap-4 md:grid-cols-[minmax(0,1fr)_240px]">
-              <div className="relative min-h-[320px] overflow-hidden rounded-[28px] border border-white/10 bg-slate-950/60">
-                <MediaTile
-                  stream={remoteStream}
-                  fallbackAvatar={avatar}
-                  title={`@${activeCallUser?.username || 'user'}`}
-                  subtitle={remoteMediaState.isScreenSharing ? 'Sharing screen' : remoteMediaState.isCameraEnabled ? 'Camera on' : 'Audio only'}
-                >
-                  <div className="flex items-center gap-2 text-slate-300">
-                    {remoteMediaState.isMuted ? <MicOff size={16} /> : <Mic size={16} />}
-                    {remoteMediaState.isCameraEnabled ? <Video size={16} /> : <VideoOff size={16} />}
-                  </div>
-                </MediaTile>
-                {showWorkspace && (
-                  <DrawingCanvas
-                    strokes={collaborativePaths}
-                    draftStroke={localDrawStroke}
-                    remotePointer={remotePointer}
-                    onPointerDown={(point) => isAnnotating && startStroke(point)}
-                    onPointerMove={(point) => isAnnotating && extendStroke(point)}
-                    onPointerUp={() => isAnnotating && finishStroke()}
-                  />
-                )}
-                <div className="pointer-events-none absolute left-4 top-4 rounded-full bg-black/45 px-3 py-1 text-xs text-slate-200">
-                  Shared whiteboard overlay {isAnnotating ? 'enabled' : 'ready'}
-                </div>
-              </div>
-
-              <div className="grid min-h-0 gap-4">
-                <MediaTile
-                  stream={previewStream}
-                  fallbackAvatar={authUser?.profilePicture || '/avatar.png'}
-                  title="You"
-                  subtitle={isScreenSharing ? 'Sharing your screen' : isCameraEnabled ? 'Camera on' : 'Audio only'}
-                  muted
-                  mirrored={!isScreenSharing}
-                >
-                  <div className="flex items-center gap-2 text-slate-300">
-                    {isMuted ? <MicOff size={16} /> : <Mic size={16} />}
-                    {isCameraEnabled ? <Camera size={16} /> : <CameraOff size={16} />}
-                  </div>
-                </MediaTile>
-
-                <div className="rounded-[28px] border border-white/10 bg-slate-950/60 p-4">
-                  <div className="mb-3 text-sm font-semibold text-slate-100">Collaboration tools</div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button type="button" onClick={toggleScreenShare} className="rounded-2xl border border-white/10 bg-white/5 p-3 text-left transition hover:bg-white/10">
-                      <MonitorUp size={18} className="mb-2 text-cyan-300" />
-                      <div className="text-sm font-medium">{isScreenSharing ? 'Stop sharing' : 'Share screen'}</div>
-                    </button>
-                    <button type="button" onClick={shareLocationInCall} className="rounded-2xl border border-white/10 bg-white/5 p-3 text-left transition hover:bg-white/10">
-                      <MapPin size={18} className="mb-2 text-amber-300" />
-                      <div className="text-sm font-medium">Share location</div>
-                    </button>
-                    <button type="button" onClick={() => setIsAnnotating((value) => !value)} className={`rounded-2xl border p-3 text-left transition ${isAnnotating ? 'border-cyan-400/40 bg-cyan-400/10' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}>
-                      <Camera size={18} className="mb-2 text-cyan-300" />
-                      <div className="text-sm font-medium">{isAnnotating ? 'Drawing on' : 'Draw together'}</div>
-                    </button>
-                    <button type="button" onClick={clearDrawings} className="rounded-2xl border border-white/10 bg-white/5 p-3 text-left transition hover:bg-white/10">
-                      <Eraser size={18} className="mb-2 text-rose-300" />
-                      <div className="text-sm font-medium">Clear canvas</div>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-col justify-between rounded-[28px] border border-white/10 bg-slate-950/60 p-5">
-              <div>
-                <div className="text-sm uppercase tracking-[0.3em] text-slate-400">Call controls</div>
-                <div className="mt-2 text-2xl font-semibold">Realtime studio</div>
-                <p className="mt-2 text-sm text-slate-300">Switch between camera and screen share, annotate together, and send a live location pin while the call is active.</p>
-              </div>
-              <div className="mt-8 flex flex-wrap items-center gap-3">
-                <button type="button" onClick={toggleMute} className="rounded-full bg-slate-800 p-4 text-white transition hover:bg-slate-700">{isMuted ? <MicOff size={20} /> : <Mic size={20} />}</button>
-                <button type="button" onClick={toggleCamera} className="rounded-full bg-slate-800 p-4 text-white transition hover:bg-slate-700">{isCameraEnabled ? <Camera size={20} /> : <CameraOff size={20} />}</button>
-                <button type="button" onClick={toggleScreenShare} className="rounded-full bg-slate-800 p-4 text-white transition hover:bg-slate-700"><MonitorUp size={20} /></button>
-                <button type="button" onClick={endCall} className="rounded-full bg-red-500 p-4 text-white transition hover:bg-red-600"><PhoneOff size={20} /></button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
