@@ -49,7 +49,7 @@ const WhotCardDesign = ({ card, playable, onPlay, disabled }) => {
 };
 
 // --- REALISTIC 3D DICE COMPONENT ---
-const Dice3D = ({ value, rolling }) => {
+const Dice3D = ({ value, rolling, disabled, onClick }) => {
   // Rotations required to show each face correctly to the camera
   const rotations = {
     1: 'rotateX(0deg) rotateY(0deg)',
@@ -67,7 +67,7 @@ const Dice3D = ({ value, rolling }) => {
 
   const Face = ({ dots, rotation }) => (
     <div 
-      className="absolute w-full h-full bg-white border border-gray-300 rounded-lg shadow-inner grid grid-cols-3 grid-rows-3 p-1.5 gap-1"
+      className="absolute w-full h-full bg-white rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.22)] grid grid-cols-3 grid-rows-3 p-1.5 gap-1"
       style={{ transform: `${rotation} translateZ(24px)` }}
     >
       {Array.from({ length: 9 }).map((_, i) => (
@@ -79,7 +79,13 @@ const Dice3D = ({ value, rolling }) => {
   );
 
   return (
-    <div style={{ perspective: '800px' }} className="w-12 h-12 shadow-2xl rounded-lg">
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{ perspective: '800px' }}
+      className={`w-12 h-12 rounded-lg transition-transform ${disabled ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover:scale-105 active:scale-95'}`}
+    >
       <div 
         className={`relative w-full h-full transition-transform ${rolling ? 'duration-300 ease-linear' : 'duration-700 ease-out'}`}
         style={{ transformStyle: 'preserve-3d', transform }}
@@ -91,7 +97,7 @@ const Dice3D = ({ value, rolling }) => {
         <Face dots={[0,2,4,6,8]} rotation="rotateX(90deg)" /> {/* 5 */}
         <Face dots={[0,2,3,5,6,8]} rotation="rotateX(180deg)" /> {/* 6 */}
       </div>
-    </div>
+    </button>
   );
 };
 
@@ -103,9 +109,15 @@ const LudoToken = ({ color, targetPathIndex, pathArray, homePos, isMine, onClick
   useEffect(() => {
     if (displayIndex !== targetPathIndex) {
       if (targetPathIndex === -1) {
-        setDisplayIndex(-1); // Eaten, instant home
+        const timer = setTimeout(() => {
+          setDisplayIndex(-1); // Eaten, instant home
+        }, 0);
+        return () => clearTimeout(timer);
       } else if (displayIndex === -1 && targetPathIndex === 0) {
-        setDisplayIndex(0); // Exiting house
+        const timer = setTimeout(() => {
+          setDisplayIndex(0); // Exiting house
+        }, 0);
+        return () => clearTimeout(timer);
       } else {
         const step = displayIndex < targetPathIndex ? 1 : -1;
         const timer = setTimeout(() => {
@@ -137,7 +149,7 @@ const LudoToken = ({ color, targetPathIndex, pathArray, homePos, isMine, onClick
         onClick={onClick}
         disabled={disabled}
         className={`
-          relative w-6 h-6 sm:w-8 sm:h-8 rounded-full 
+          relative flex items-center justify-center w-5 h-5 sm:w-6 sm:h-6 rounded-full 
           ${getNigerianColor(color)}
           border-2 border-white shadow-[0_4px_6px_rgba(0,0,0,0.5)]
           ${isMine && !disabled ? 'hover:scale-125 cursor-pointer ring-2 ring-white animate-pulse' : ''}
@@ -188,12 +200,8 @@ const NigerianLudoBoard = ({ game, onMove, onRoll }) => {
     blue: [getCoord(11.5, 11.5), getCoord(12.5, 11.5), getCoord(11.5, 12.5), getCoord(12.5, 12.5)]
   };
 
-  const getPlayerColor = (playerId) => {
-    const players = Object.keys(game.tokens || {});
-    return ['red', 'green', 'yellow', 'blue'][players.indexOf(playerId)] || 'red';
-  };
-
   const handleRoll = () => {
+    if (!myTurn || game.diceValue1 || game.diceValue2 || diceRolling) return;
     setDiceRolling(true);
     const r1 = Math.floor(Math.random() * 6) + 1;
     const r2 = Math.floor(Math.random() * 6) + 1;
@@ -210,7 +218,7 @@ const NigerianLudoBoard = ({ game, onMove, onRoll }) => {
   useEffect(() => {
     if (game.diceValue1 && !diceRolling) setDice1(game.diceValue1);
     if (game.diceValue2 && !diceRolling) setDice2(game.diceValue2);
-  }, [game.diceValue1, game.diceValue2]);
+  }, [game.diceValue1, game.diceValue2, diceRolling]);
 
   return (
     <div className="flex-1 p-2 sm:p-6 flex flex-col items-center gap-4">
@@ -273,17 +281,21 @@ const NigerianLudoBoard = ({ game, onMove, onRoll }) => {
 
           {/* Tokens Rendering */}
           {game.tokens && Object.entries(game.tokens).map(([playerId, tokenPositions]) => {
-            const color = getPlayerColor(playerId);
             const isMine = playerId === me;
+            const colorCounts = {};
             
-            return tokenPositions.map((pos, tokenIdx) => {
+            return tokenPositions.map((token, tokenIdx) => {
+              const color = token.color;
+              const colorIndex = colorCounts[color] || 0;
+              colorCounts[color] = colorIndex + 1;
+
               return (
                 <LudoToken
                   key={`${playerId}-${tokenIdx}`}
                   color={color}
-                  targetPathIndex={pos} 
+                  targetPathIndex={token.pos} 
                   pathArray={ludoPath[color]}
-                  homePos={homePositions[color][tokenIdx]}
+                  homePos={homePositions[color][colorIndex]}
                   isMine={isMine}
                   disabled={!isMine || !myTurn || (!game.diceValue1 && !game.diceValue2)}
                   onClick={() => onMove(tokenIdx)}
@@ -295,23 +307,21 @@ const NigerianLudoBoard = ({ game, onMove, onRoll }) => {
 
         {/* 3D DICE CENTER PIECE */}
         <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-          <div className="bg-black/40 backdrop-blur-sm p-4 rounded-3xl shadow-2xl flex flex-col items-center gap-3 pointer-events-auto">
+          <div className="flex items-center justify-center gap-4 pointer-events-auto">
             <div className="flex gap-4">
-              <Dice3D value={dice1} rolling={diceRolling} />
-              <Dice3D value={dice2} rolling={diceRolling} />
+              <Dice3D
+                value={dice1}
+                rolling={diceRolling}
+                onClick={handleRoll}
+                disabled={!myTurn || Boolean(game.diceValue1 || game.diceValue2) || diceRolling}
+              />
+              <Dice3D
+                value={dice2}
+                rolling={diceRolling}
+                onClick={handleRoll}
+                disabled={!myTurn || Boolean(game.diceValue1 || game.diceValue2) || diceRolling}
+              />
             </div>
-            <button
-              onClick={handleRoll}
-              disabled={!myTurn || game.diceValue1}
-              className={`
-                mt-1 px-8 py-2 rounded-full font-bold
-                bg-gradient-to-r from-yellow-400 to-yellow-600 text-black 
-                border-2 border-white
-                ${!myTurn || game.diceValue1 ? 'opacity-50 cursor-not-allowed' : 'hover:scale-110 shadow-[0_0_15px_rgba(250,204,21,0.8)] cursor-pointer animate-pulse'}
-              `}
-            >
-              ROLL
-            </button>
           </div>
         </div>
 
