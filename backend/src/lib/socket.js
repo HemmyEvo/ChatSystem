@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Server } from 'socket.io';
 import http from 'http';
 import express from 'express';
@@ -5,7 +6,7 @@ import dotenv from 'dotenv';
 import { socketAuthmiddleware } from './utlis.js';
 import User from '../models/User.js';
 import Message from '../models/Message.js';
-import { applyGameAction, clearInvite, createInvite, createSession, forfeitSession, getInvite, getPlayerState, getSession } from './gameEngine.js';
+import { applyGameAction, clearInvite, createInvite, createSession, forfeitSession, getActiveSessionByPlayer, getInvite, getPlayerState, getSession } from './gameEngine.js';
 
 dotenv.config();
 
@@ -115,6 +116,11 @@ io.on('connection', async (socket) => {
   io.emit('user:last-seen', { userId, lastSeen: new Date().toISOString(), isOnline: true });
   await processPendingDeliveries(userId);
 
+  const resumedSession = getActiveSessionByPlayer(userId);
+  if (resumedSession) {
+    socket.emit('game:resume-required', getPlayerState(resumedSession.id, userId));
+  }
+
   socket.on('isTyping', ({ senderId, receiverId }) => {
     const receiverSocketId = getReceiverSocketId(receiverId);
     if (receiverSocketId) io.to(receiverSocketId).emit('typing', { senderId });
@@ -122,11 +128,32 @@ io.on('connection', async (socket) => {
 
   socket.on('game:invite', ({ toUserId, gameType }) => {
     if (!toUserId || !['whot', 'ludo'].includes(gameType)) return;
+
+    const senderSession = getActiveSessionByPlayer(userId);
+    if (senderSession) {
+      socket.emit('game:error', { message: 'You are already in a room. Finish or forfeit that game first.' });
+      return;
+    }
+
     const receiverSocketId = getReceiverSocketId(toUserId);
     if (!receiverSocketId) {
       socket.emit('game:error', { message: 'User is offline. Invite failed.' });
       return;
     }
+
+    const receiverSession = getActiveSessionByPlayer(toUserId);
+    if (receiverSession) {
+      socket.emit('game:error', { message: 'That user is already in a room.' });
+      io.to(receiverSocketId).emit('game:invite:missed', {
+        id: crypto.randomUUID(),
+        gameType,
+        fromUserId: userId,
+        fromName: socket.user?.fullname || 'Player',
+        createdAt: Date.now(),
+      });
+      return;
+    }
+
     const invite = createInvite({ fromUserId: userId, toUserId, gameType });
     io.to(receiverSocketId).emit('game:invite', { ...invite, fromUser: { _id: userId, fullname: socket.user?.fullname || 'Player' } });
     socket.emit('game:invite:sent', invite);
@@ -214,6 +241,11 @@ io.on('connection', async (socket) => {
     emitPresence();
     io.emit('user:last-seen', { userId, lastSeen: new Date().toISOString(), isOnline: true });
     await processPendingDeliveries(userId);
+
+    const resumedSession = getActiveSessionByPlayer(userId);
+    if (resumedSession) {
+      socket.emit('game:resume-required', getPlayerState(resumedSession.id, userId));
+    }
   });
 
   socket.on('user:away', async () => {

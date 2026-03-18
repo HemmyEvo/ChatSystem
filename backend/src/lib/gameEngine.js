@@ -87,15 +87,17 @@ const getUniversalPos = (relativePos, color) => {
   return (relativePos + colorOffsets[color]) % 52;
 };
 
+const canUnlockToken = (diceValues) => diceValues.includes(6) || (diceValues.length === 2 && (diceValues[0] + diceValues[1] === 6));
+
 const hasAnyValidMove = (tokens, diceValues) => {
   if (!diceValues.length) return false;
 
-  if (tokens.some((token) => token.pos === -1) && diceValues.includes(6)) {
+  if (tokens.some((token) => token.pos === -1) && canUnlockToken(diceValues)) {
     return true;
   }
 
   return tokens.some((token) => (
-    token.pos >= 0 && diceValues.some((die) => token.pos + die <= 57)
+    token.pos >= 0 && token.pos < 57 && diceValues.some((die) => token.pos + die <= 57)
   ));
 };
 
@@ -129,6 +131,7 @@ const buildPublicState = (session, viewerId) => {
     tokens: session.state.tokens,
     winnerId: session.state.winnerId,
     players: session.players,
+    availableDice: session.state.diceValues,
   };
 };
 
@@ -152,6 +155,10 @@ export const createSession = ({ gameType, playerA, playerB }) => {
 };
 
 export const getSession = (id) => gameSessions.get(id);
+
+export const getActiveSessionByPlayer = (playerId) => (
+  [...gameSessions.values()].find((session) => session.status === 'active' && session.players.includes(playerId)) || null
+);
 
 export const getPlayerState = (sessionId, playerId) => {
   const session = getSession(sessionId);
@@ -239,18 +246,44 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
       const token = playerTokens[tokenIndex];
       let nextPos = token.pos;
       const diceValues = session.state.diceValues;
+      const requestedDieIndex = Number.isInteger(action.dieIndex) ? action.dieIndex : null;
       let diceToConsume = [];
 
       if (token.pos === -1) {
-        if (diceValues.includes(6)) {
+        const selectedDie = requestedDieIndex !== null ? diceValues[requestedDieIndex] : null;
+        const selectedOtherDie = requestedDieIndex !== null && diceValues.length === 2 ? diceValues[requestedDieIndex === 0 ? 1 : 0] : null;
+
+        if (selectedDie === 6) {
+          diceToConsume = [requestedDieIndex];
+          nextPos = 0;
+        } else if (selectedDie !== null && selectedOtherDie !== null && selectedDie + selectedOtherDie === 6) {
+          diceToConsume = [0, 1];
+          nextPos = 0;
+        } else if (requestedDieIndex === null && diceValues.includes(6)) {
           diceToConsume = [diceValues.indexOf(6)];
           nextPos = 0;
+        } else if (requestedDieIndex === null && diceValues.length === 2 && diceValues[0] + diceValues[1] === 6) {
+          diceToConsume = [0, 1];
+          nextPos = 0;
         } else {
-          return { error: 'Need a 6 to bring token out.' };
+          return { error: 'Need a 6 or a total of 6 to bring token out.' };
         }
       } else {
-        const usableDieIndex = diceValues.findIndex((die) => token.pos + die <= 57);
-        if (usableDieIndex === -1) return { error: 'No valid moves for this token with current dice.' };
+        let usableDieIndex = -1;
+
+        if (requestedDieIndex !== null) {
+          if (requestedDieIndex < 0 || requestedDieIndex >= diceValues.length) {
+            return { error: 'Choose a valid die first.' };
+          }
+          if (token.pos + diceValues[requestedDieIndex] > 57) {
+            return { error: 'That die overshoots home for this token.' };
+          }
+          usableDieIndex = requestedDieIndex;
+        } else {
+          usableDieIndex = diceValues.findIndex((die) => token.pos + die <= 57);
+          if (usableDieIndex === -1) return { error: 'No valid moves for this token with current dice.' };
+        }
+
         diceToConsume = [usableDieIndex];
         nextPos = token.pos + diceValues[usableDieIndex];
       }
