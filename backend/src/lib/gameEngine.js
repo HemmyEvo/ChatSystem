@@ -3,6 +3,7 @@ import crypto from 'crypto';
 const gameSessions = new Map();
 const pendingInvites = new Map();
 
+// --- WHOT MECHANICS ---
 const suits = ['circle', 'triangle', 'cross', 'star', 'square'];
 const whotNumbers = [1, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14];
 
@@ -50,22 +51,32 @@ const canPlayWhotCard = ({ card, topCard, requestedSuit }) => {
   return card.suit === topCard.suit || card.number === topCard.number;
 };
 
+// --- LUDO MECHANICS ---
 const rollDice = () => Math.floor(Math.random() * 6) + 1;
+
+// Universal safe spots on the 52-square perimeter
 const ludoSafeSpots = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
-const ludoHomeStart = 52;
 
 const initLudoState = (players) => ({
   tokens: {
-    [players[0]]: [-1, -1, -1, -1],
+    [players[0]]: [-1, -1, -1, -1], // -1 means in base. 0 is start. 57 is home center.
     [players[1]]: [-1, -1, -1, -1],
   },
   currentPlayer: players[0],
-  diceValue: null,
+  diceValues: [], // Array to hold 2 dice rolls, e.g., [4, 6]
+  hasBonusRoll: false, // Nigerian rule: rolling a 6 grants a bonus turn
   winnerId: null,
 });
 
 const nextPlayer = (players, current) => players[(players.indexOf(current) + 1) % players.length];
-const ludoEntryIndex = (playerIndex) => (playerIndex === 0 ? 0 : 26);
+
+// Translates a player's relative board position (0-51) to a universal track (0-51) to check for eating.
+// Player 0 (Red) starts at universal 0. Player 1 (Green) starts at universal 13.
+const getUniversalPos = (relativePos, playerIndex) => {
+  if (relativePos < 0 || relativePos > 51) return -1; // In base or home stretch (safe)
+  const offset = playerIndex === 0 ? 0 : 13; 
+  return (relativePos + offset) % 52;
+};
 
 const buildPublicState = (session, viewerId) => {
   if (session.gameType === 'whot') {
@@ -92,7 +103,8 @@ const buildPublicState = (session, viewerId) => {
     gameType: session.gameType,
     status: session.status,
     currentPlayer: session.state.currentPlayer,
-    diceValue: session.state.diceValue,
+    diceValue1: session.state.diceValues[0] || null, // Map array back to distinct values for frontend
+    diceValue2: session.state.diceValues[1] || null,
     tokens: session.state.tokens,
     winnerId: session.state.winnerId,
     players: session.players,
@@ -133,6 +145,7 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
   if (session.state.currentPlayer !== playerId) return { error: 'Wait for your turn.' };
 
   if (session.gameType === 'whot') {
+    // ... [WHOT logic remains exactly as you had it] ...
     const hand = session.state.hands[playerId];
     const topCard = session.state.discard[session.state.discard.length - 1];
 
@@ -177,48 +190,82 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
     } else {
       return { error: 'Unsupported action.' };
     }
+
   } else {
+    // LUDO LOGIC
     const playerIndex = session.players.indexOf(playerId);
     const playerTokens = session.state.tokens[playerId];
 
     if (action.type === 'roll') {
-      if (session.state.diceValue) return { error: 'You have an active dice roll.' };
-      session.state.diceValue = rollDice();
+      if (session.state.diceValues.length > 0) return { error: 'You still have moves left.' };
+      
+      // Accept frontend dice for visual sync, fallback to server gen
+      const d1 = action.dice1 || rollDice();
+      const d2 = action.dice2 || rollDice();
+      
+      session.state.diceValues = [d1, d2];
+      session.state.hasBonusRoll = (d1 === 6 || d2 === 6);
+
     } else if (action.type === 'move') {
-      const steps = session.state.diceValue;
-      if (!steps) return { error: 'Roll the dice first.' };
+      if (session.state.diceValues.length === 0) return { error: 'Roll the dice first.' };
+      
       const tokenIndex = Number(action.tokenIndex);
       if (Number.isNaN(tokenIndex) || tokenIndex < 0 || tokenIndex > 3) return { error: 'Invalid token.' };
 
       let pos = playerTokens[tokenIndex];
+      let usedDieIndex = -1;
+
+      // Logic to auto-select which die to consume
       if (pos === -1) {
-        if (steps !== 6) return { error: 'Need a 6 to bring token out.' };
-        pos = ludoEntryIndex(playerIndex);
+        // Need a 6 to exit base
+        usedDieIndex = session.state.diceValues.indexOf(6);
+        if (usedDieIndex === -1) return { error: 'Need a 6 to bring token out.' };
+        pos = 0; 
       } else {
-        pos += steps;
-        if (pos > 57) return { error: 'Move exceeds home path.' };
+        // Try the first available die that doesn't overshoot home (57)
+        for (let i = 0; i < session.state.diceValues.length; i++) {
+          if (pos + session.state.diceValues[i] <= 57) {
+            usedDieIndex = i;
+            pos += session.state.diceValues[i];
+            break;
+          }
+        }
+        if (usedDieIndex === -1) return { error: 'No valid moves for this token with current dice.' };
       }
 
+      // Apply the move and remove the spent die
       playerTokens[tokenIndex] = pos;
+      session.state.diceValues.splice(usedDieIndex, 1);
 
-      const opponentId = session.players.find((id) => id !== playerId);
-      const opponentTokens = session.state.tokens[opponentId];
-      opponentTokens.forEach((oppPos, idx) => {
-        if (oppPos === pos && pos < ludoHomeStart && !ludoSafeSpots.has(pos)) {
-          opponentTokens[idx] = -1;
-        }
-      });
+      // --- Eating (Capture) Logic ---
+      const myUniversalPos = getUniversalPos(pos, playerIndex);
+      
+      if (myUniversalPos !== -1 && !ludoSafeSpots.has(myUniversalPos)) {
+        const opponentId = session.players.find((id) => id !== playerId);
+        const opponentIndex = session.players.indexOf(opponentId);
+        const opponentTokens = session.state.tokens[opponentId];
+        
+        opponentTokens.forEach((oppPos, idx) => {
+          if (getUniversalPos(oppPos, opponentIndex) === myUniversalPos) {
+            opponentTokens[idx] = -1; // Send opponent back to base
+            session.state.hasBonusRoll = true; // Nigerian rules: eating grants a bonus roll
+          }
+        });
+      }
 
+      // Check for win condition
       if (playerTokens.every((tokenPos) => tokenPos === 57)) {
         session.state.winnerId = playerId;
         session.status = 'completed';
       }
 
-      if (steps === 6 && session.status === 'active') {
-        session.state.diceValue = null;
-      } else {
-        session.state.diceValue = null;
-        session.state.currentPlayer = nextPlayer(session.players, playerId);
+      // Turn Management
+      if (session.state.diceValues.length === 0 && session.status === 'active') {
+        if (session.state.hasBonusRoll) {
+          session.state.hasBonusRoll = false; // They get to roll again, keep currentPlayer the same
+        } else {
+          session.state.currentPlayer = nextPlayer(session.players, playerId);
+        }
       }
     } else {
       return { error: 'Unsupported action.' };
