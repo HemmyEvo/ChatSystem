@@ -41,6 +41,21 @@ const syncChatAfterDeletion = (chats, chatUserId, lastMessage) =>
 
 let typingTimeout = null;
 
+const clearBrowserSession = () => {
+  try {
+    localStorage.clear();
+    sessionStorage.clear();
+    document.cookie.split(';').forEach((cookie) => {
+      const [name] = cookie.split('=');
+      if (!name) return;
+      const trimmedName = name.trim();
+      document.cookie = `${trimmedName}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+    });
+  } catch (error) {
+    console.error('Error clearing browser session:', error);
+  }
+};
+
 export const useChatStore = create((set, get) => ({
   people: [],
   friends: [],
@@ -146,14 +161,28 @@ export const useChatStore = create((set, get) => ({
     return res.data.friends;
   },
   sendFriendRequest: async (userId) => {
-    await api.post(`/message/friend-request/${userId}`);
-    toast.success('Friend request sent');
-    await Promise.all([get().getPeople(), get().getFriends()]);
+    try {
+      await api.post(`/message/friend-request/${userId}`);
+      toast.success('Friend request sent');
+      await Promise.all([get().getPeople(), get().getFriends()]);
+    } catch (error) {
+      if (error.response?.status === 404 && error.response?.data?.message === 'User not found') {
+        clearBrowserSession();
+      }
+      throw error;
+    }
   },
   respondToFriendRequest: async (userId, accept) => {
-    await api.post(`/message/friend-request/${userId}/respond`, { accept });
-    toast.success(accept ? 'Friend request accepted' : 'Friend request declined');
-    await Promise.all([get().getPeople(), get().getFriends()]);
+    try {
+      await api.post(`/message/friend-request/${userId}/respond`, { accept });
+      toast.success(accept ? 'Friend request accepted' : 'Friend request declined');
+      await Promise.all([get().getPeople(), get().getFriends()]);
+    } catch (error) {
+      if (error.response?.status === 404 && error.response?.data?.message === 'User not found') {
+        clearBrowserSession();
+      }
+      throw error;
+    }
   },
 
   getChats: async () => {
