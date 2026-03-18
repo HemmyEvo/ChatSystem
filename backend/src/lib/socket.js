@@ -284,6 +284,59 @@ io.on('connection', async (socket) => {
     }
   });
 
+  socket.on('call:start', ({ toUserId }) => {
+    if (!toUserId || toUserId === userId) return;
+    const receiverSocketId = getReceiverSocketId(toUserId);
+    if (!receiverSocketId) {
+      socket.emit('call:unavailable', { toUserId, reason: 'offline' });
+      return;
+    }
+
+    io.to(receiverSocketId).emit('call:incoming', {
+      fromUserId: userId,
+      fromUser: {
+        _id: userId,
+        username: socket.user?.username || 'User',
+        profilePicture: socket.user?.profilePicture || '',
+      },
+    });
+  });
+
+  socket.on('call:accept', ({ toUserId }) => {
+    const receiverSocketId = getReceiverSocketId(toUserId);
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit('call:accepted', { fromUserId: userId });
+    }
+  });
+
+  socket.on('call:decline', ({ toUserId }) => {
+    const receiverSocketId = getReceiverSocketId(toUserId);
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit('call:declined', { fromUserId: userId });
+    }
+  });
+
+  socket.on('call:end', ({ toUserId }) => {
+    const receiverSocketId = getReceiverSocketId(toUserId);
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit('call:ended', { fromUserId: userId });
+    }
+  });
+
+  socket.on('call:signal', ({ toUserId, description, candidate }) => {
+    const receiverSocketId = getReceiverSocketId(toUserId);
+    if (!receiverSocketId) {
+      socket.emit('call:unavailable', { toUserId, reason: 'offline' });
+      return;
+    }
+
+    io.to(receiverSocketId).emit('call:signal', {
+      fromUserId: userId,
+      description: description || null,
+      candidate: candidate || null,
+    });
+  });
+
   socket.on('user:active', async () => {
     userSocketMap[userId] = socket.id;
     await User.findByIdAndUpdate(userId, { lastSeen: new Date() });

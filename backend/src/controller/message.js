@@ -126,6 +126,31 @@ export const messageController = {
       ];
       await Promise.all(updates);
 
+      if (accept) {
+        const acceptanceMessage = await Message.create({
+          senderId: myId,
+          receiverId: requesterId,
+          text: `🤝 @${me.username} accepted your friend request. You can start chatting and call now.`,
+        });
+
+        const populatedAcceptanceMessage = await Message.findById(acceptanceMessage._id)
+          .populate('replyTo', 'text image video audio document senderId createdAt')
+          .populate('sharedContactId', 'username profilePicture email');
+
+        const mySocketId = getReceiverSocketId(myId);
+        const requesterSocketId = getReceiverSocketId(requesterId);
+
+        if (mySocketId) {
+          io.to(mySocketId).emit('newMessage', populatedAcceptanceMessage);
+          io.to(mySocketId).emit('chat:last-message', populatedAcceptanceMessage);
+        }
+
+        if (requesterSocketId) {
+          io.to(requesterSocketId).emit('newMessage', populatedAcceptanceMessage);
+          io.to(requesterSocketId).emit('chat:last-message', populatedAcceptanceMessage);
+        }
+      }
+
       const requesterSocketId = getReceiverSocketId(requesterId);
       if (requesterSocketId) {
         io.to(requesterSocketId).emit('friend:request:responded', {

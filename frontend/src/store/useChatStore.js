@@ -142,7 +142,7 @@ export const useChatStore = create((set, get) => ({
   sendFriendRequest: async (userId) => {
     await api.post(`/message/friend-request/${userId}`);
     toast.success('Friend request sent');
-    await get().getPeople();
+    await Promise.all([get().getPeople(), get().getFriends()]);
   },
   respondToFriendRequest: async (userId, accept) => {
     await api.post(`/message/friend-request/${userId}/respond`, { accept });
@@ -246,6 +246,7 @@ export const useChatStore = create((set, get) => ({
     socket.off('messages:delivered');
     socket.off('friend:request:received');
     socket.off('friend:request:responded');
+    socket.off('chat:last-message');
 
     socket.on('newMessage', async (message) => {
       const selectedUser = get().selectedUser;
@@ -278,6 +279,9 @@ export const useChatStore = create((set, get) => ({
       await Promise.all([get().getPeople(), get().getFriends()]);
       toast.success(accepted ? `@${user?.username} accepted your friend request` : `@${user?.username} declined your friend request`);
     });
+    socket.on('chat:last-message', (message) => {
+      set({ chats: updateChatWithLastMessage(get().chats, message) });
+    });
   },
   unsubscribeFromNewMessages: () => {
     const socket = useAuthStore.getState().socket;
@@ -287,6 +291,7 @@ export const useChatStore = create((set, get) => ({
     socket?.off('messages:delivered');
     socket?.off('friend:request:received');
     socket?.off('friend:request:responded');
+    socket?.off('chat:last-message');
   },
 
   blockUser: async (userId) => { await api.post(`/message/block/${userId}`); toast.success('User blocked'); },

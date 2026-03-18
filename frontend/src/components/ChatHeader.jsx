@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useChatStore } from '../store/useChatStore';
 import GoBackButton from './GoBackButton';
-import { Ban, Copy, Forward, Reply, Trash2, MoreVertical, X, Image as ImageIcon, PaintBucket, SlidersHorizontal } from 'lucide-react';
+import { Ban, Copy, Forward, Reply, Trash2, MoreVertical, X, Image as ImageIcon, PaintBucket, SlidersHorizontal, Phone } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
+import { useCallStore } from '../store/useCallStore';
 
 const formatLastSeen = (lastSeen) => {
   if (!lastSeen) return 'recently';
@@ -53,6 +54,7 @@ function ChatHeader() {
   } = useChatStore();
   
   const { onlineUsers, userLastSeenMap } = useAuthStore();
+  const { startCall, activeCallUser, callStatus } = useCallStore();
   const [showMenu, setShowMenu] = useState(false);
   
   // NEW: State for the profile image lightbox
@@ -155,7 +157,16 @@ function ChatHeader() {
               </div>
             </div>
 
-            <div className='relative'>
+            <div className='relative flex items-center gap-2'>
+              <button
+                type="button"
+                onClick={() => startCall(selectedUser)}
+                disabled={Boolean(activeCallUser) || callStatus === 'ringing'}
+                className='rounded-full p-2 text-slate-300 transition hover:bg-slate-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50'
+                title='Start voice call'
+              >
+                <Phone size={18} />
+              </button>
               <button onClick={() => setShowMenu((s) => !s)} className='text-slate-300'><MoreVertical size={18} /></button>
               {showMenu && (
                 <div className='absolute right-0 top-7 bg-[#233138] text-slate-100 rounded-md p-2 w-[260px] z-[60] shadow-xl border border-slate-700'>
