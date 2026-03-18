@@ -10,6 +10,11 @@ const messageSchema = new mongoose.Schema(
     audio: { type: String },
     document: { type: String },
     sharedContactId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    location: {
+      lat: { type: Number },
+      lng: { type: Number },
+      label: { type: String },
+    },
     replyTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Message' },
     reactions: [
       {
