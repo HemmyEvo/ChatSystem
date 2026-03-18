@@ -55,7 +55,7 @@ const canPlayWhotCard = ({ card, topCard, requestedSuit }) => {
 const rollDice = () => Math.floor(Math.random() * 6) + 1;
 
 // Universal safe spots on the 52-square perimeter
-const ludoSafeSpots = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
+const ludoSafeSpots = new Set([8, 21, 34, 47]);
 const playerColorSets = [
   ['red', 'blue'],
   ['green', 'yellow'],

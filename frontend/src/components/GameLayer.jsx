@@ -108,14 +108,14 @@ const getTokenColorClass = (color) => ({
   yellow: 'bg-yellow-400',
 }[color] || 'bg-gray-600');
 
-const LudoToken = ({ color, targetPathIndex, pathArray, homePos, completedPos, stackOffset, isMine, onClick, disabled, isSelected }) => {
+const LudoToken = ({ color, targetPathIndex, pathArray, homePos, completedPos, stackOffset: homeStackOffset, isMine, onClick, disabled, isSelected, stackIndex = 0, stackTotal = 1 }) => {
   const [displayIndex, setDisplayIndex] = useState(targetPathIndex);
   const [position, setPosition] = useState(() => {
     if (targetPathIndex === -1 || targetPathIndex === -2) return homePos;
     if (targetPathIndex >= 57) {
       return {
-        x: completedPos.x + stackOffset.x,
-        y: completedPos.y + stackOffset.y,
+        x: completedPos.x + homeStackOffset.x,
+        y: completedPos.y + homeStackOffset.y,
       };
     }
     return pathArray[targetPathIndex] || { x: 50, y: 50 };
@@ -135,8 +135,8 @@ const LudoToken = ({ color, targetPathIndex, pathArray, homePos, completedPos, s
       const timer = setTimeout(() => {
         setDisplayIndex(targetPathIndex);
         setPosition({
-          x: completedPos.x + stackOffset.x,
-          y: completedPos.y + stackOffset.y,
+          x: completedPos.x + homeStackOffset.x,
+          y: completedPos.y + homeStackOffset.y,
         });
       }, 0);
       return () => clearTimeout(timer);
@@ -163,12 +163,23 @@ const LudoToken = ({ color, targetPathIndex, pathArray, homePos, completedPos, s
       setPosition(pathArray[nextStep] || { x: 50, y: 50 });
     }, 110);
     return () => clearTimeout(timer);
-  }, [completedPos, displayIndex, homePos, pathArray, stackOffset, targetPathIndex]);
+  }, [completedPos, displayIndex, homePos, pathArray, homeStackOffset, targetPathIndex]);
+
+  // Fan out logic for stacked tokens
+  const radius = stackTotal > 1 ? 8 : 0; // 8px spread radius when stacked
+  const angle = stackTotal > 1 ? (stackIndex / stackTotal) * Math.PI * 2 + Math.PI / 4 : 0;
+  const shiftX = Math.cos(angle) * radius;
+  const shiftY = Math.sin(angle) * radius;
+  const scale = stackTotal > 1 ? 0.8 : 1; // Shrink slightly to fit in the box
 
   return (
     <div
-      className={`absolute z-20 transition-[left,top] ${isMovingAlongTrack ? 'duration-100 ease-linear' : 'duration-220 ease-out'}`}
-      style={{ left: `${position.x}%`, top: `${position.y}%`, transform: 'translate(-50%, -50%)' }}
+      className={`absolute z-20 transition-[left,top,transform] ${isMovingAlongTrack ? 'duration-100 ease-linear' : 'duration-220 ease-out'}`}
+      style={{ 
+        left: `${position.x}%`, 
+        top: `${position.y}%`, 
+        transform: `translate(calc(-50% + ${shiftX}px), calc(-50% + ${shiftY}px)) scale(${scale})` 
+      }}
     >
       <button
         onClick={onClick}
@@ -177,8 +188,8 @@ const LudoToken = ({ color, targetPathIndex, pathArray, homePos, completedPos, s
           relative flex items-center justify-center w-5 h-5 sm:w-6 sm:h-6 rounded-full
           ${getTokenColorClass(color)}
           border-2 border-white shadow-[0_4px_6px_rgba(0,0,0,0.5)]
-          ${isMine && !disabled ? 'hover:scale-125 cursor-pointer ring-2 ring-white' : ''}
-          ${isSelected ? 'scale-125 ring-4 ring-yellow-300' : ''}
+          ${isMine && !disabled ? 'hover:scale-125 hover:z-30 cursor-pointer ring-2 ring-white' : ''}
+          ${isSelected ? 'scale-125 ring-4 ring-yellow-300 z-30' : ''}
           ${disabled ? 'opacity-90 cursor-not-allowed' : ''}
         `}
       >
@@ -228,10 +239,7 @@ const NigerianLudoBoard = ({ game, onMove, onRoll, selectedDieIndex, onSelectDie
 
   const completedCenter = { x: 50, y: 50 };
   const completedOffsets = [
-    { x: -2.6, y: -2.6 },
-    { x: 2.6, y: -2.6 },
-    { x: -2.6, y: 2.6 },
-    { x: 2.6, y: 2.6 },
+    { x: -2.6, y: -2.6 }, { x: 2.6, y: -2.6 }, { x: -2.6, y: 2.6 }, { x: 2.6, y: 2.6 },
   ];
 
   const availableDice = [game.diceValue1, game.diceValue2].filter((value) => value !== null && value !== undefined);
@@ -240,7 +248,6 @@ const NigerianLudoBoard = ({ game, onMove, onRoll, selectedDieIndex, onSelectDie
   useEffect(() => {
     moveSoundRef.current = new Audio('/sounds/mouse-click.mp3');
     captureSoundRef.current = new Audio('/sounds/notification.mp3');
-
     return () => {
       moveSoundRef.current = null;
       captureSoundRef.current = null;
@@ -322,6 +329,30 @@ const NigerianLudoBoard = ({ game, onMove, onRoll, selectedDieIndex, onSelectDie
     }
   }, [game.diceValue1, game.diceValue2, diceRolling, dice1, dice2, die1Active, die2Active]);
 
+  // Pre-calculate stacked tokens to visually spread them
+  const trackStacks = {};
+  const getUniversalPos = (pos, color) => {
+    if (pos < 0 || pos > 51) return -1;
+    const offsets = { red: 0, green: 13, blue: 26, yellow: 39 };
+    return (pos + offsets[color]) % 52;
+  };
+
+  if (game.tokens) {
+    Object.entries(game.tokens).forEach(([pId, tokens]) => {
+      tokens.forEach((t, idx) => {
+        if (t.pos >= 0 && t.pos <= 51) {
+          const uPos = getUniversalPos(t.pos, t.color);
+          if (!trackStacks[uPos]) trackStacks[uPos] = [];
+          trackStacks[uPos].push({ pId, idx });
+        } else if (t.pos >= 52 && t.pos < 57) {
+          const key = `home-${t.color}-${t.pos}`;
+          if (!trackStacks[key]) trackStacks[key] = [];
+          trackStacks[key].push({ pId, idx });
+        }
+      });
+    });
+  }
+
   return (
     <div className="flex-1 p-2 sm:p-6 flex flex-col items-center gap-4">
       <div className={`px-8 py-3 rounded-full text-white font-black text-lg shadow-xl border-2 ${myTurn ? 'bg-green-600 border-green-400 animate-pulse' : 'bg-red-600 border-red-800'}`}>
@@ -376,6 +407,25 @@ const NigerianLudoBoard = ({ game, onMove, onRoll, selectedDieIndex, onSelectDie
                 completedColorCounts[color] = completedIndex + 1;
               }
 
+              let stackIndex = 0;
+              let stackTotal = 1;
+
+              if (token.pos >= 0 && token.pos <= 51) {
+                const uPos = getUniversalPos(token.pos, color);
+                const stack = trackStacks[uPos];
+                if (stack) {
+                  stackTotal = stack.length;
+                  stackIndex = stack.findIndex((s) => s.pId === playerId && s.idx === tokenIdx);
+                }
+              } else if (token.pos >= 52 && token.pos < 57) {
+                const key = `home-${color}-${token.pos}`;
+                const stack = trackStacks[key];
+                if (stack) {
+                  stackTotal = stack.length;
+                  stackIndex = stack.findIndex((s) => s.pId === playerId && s.idx === tokenIdx);
+                }
+              }
+
               return (
                 <LudoToken
                   key={`${playerId}-${tokenIdx}`}
@@ -389,6 +439,8 @@ const NigerianLudoBoard = ({ game, onMove, onRoll, selectedDieIndex, onSelectDie
                   disabled={!isMine || !myTurn || (!game.diceValue1 && !game.diceValue2)}
                   isSelected={isMine && game.selectedTokenIndex === tokenIdx}
                   onClick={() => onMove(tokenIdx)}
+                  stackIndex={stackIndex}
+                  stackTotal={stackTotal}
                 />
               );
             });
