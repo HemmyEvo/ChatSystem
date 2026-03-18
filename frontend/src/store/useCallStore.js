@@ -4,6 +4,7 @@ import { useAuthStore } from './useAuthStore';
 
 const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
 const DRAW_HISTORY_LIMIT = 250;
+const MISSED_CALL_LIMIT = 20;
 
 const makeEmptyStroke = ({ color = '#22d3ee', width = 3 } = {}) => ({
   id: `stroke-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -13,6 +14,14 @@ const makeEmptyStroke = ({ color = '#22d3ee', width = 3 } = {}) => ({
 });
 
 const getTrackByKind = (stream, kind) => stream?.getTracks().find((track) => track.kind === kind) || null;
+const buildMissedCall = (payload = {}) => ({
+  id: payload.id || payload.sessionId || `missed-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  sessionId: payload.sessionId || null,
+  media: payload.media || { video: false },
+  reason: payload.reason || 'missed',
+  createdAt: payload.createdAt || Date.now(),
+  fromUser: payload.fromUser || null,
+});
 
 export const useCallStore = create((set, get) => ({
   localStream: null,
@@ -26,22 +35,36 @@ export const useCallStore = create((set, get) => ({
   isMuted: false,
   isCameraEnabled: true,
   isScreenSharing: false,
+  isRecording: false,
+  recordingSeconds: 0,
+  recordingUrl: null,
+  recordingError: '',
+  recorder: null,
+  recordingTimer: null,
   peerConnection: null,
   dataChannel: null,
-  remoteMediaState: { isMuted: false, isCameraEnabled: true, isScreenSharing: false },
+  remoteMediaState: { isMuted: false, isCameraEnabled: true, isScreenSharing: false, isRecording: false },
   remoteLocation: null,
   collaborativePaths: [],
   remotePointer: null,
   drawingColor: '#22d3ee',
   drawingWidth: 3,
   localDrawStroke: null,
+  missedCalls: [],
+
+  pushMissedCall: (payload) => {
+    const missedCall = buildMissedCall(payload);
+    set((state) => ({ missedCalls: [missedCall, ...state.missedCalls].slice(0, MISSED_CALL_LIMIT) }));
+    if (missedCall.fromUser?.username) {
+      toast(`Missed ${missedCall.media?.video ? 'video' : 'voice'} call from @${missedCall.fromUser.username}`);
+    }
+  },
+  clearMissedCalls: () => set({ missedCalls: [] }),
 
   notifyPeer: (payload) => {
     const dataChannel = get().dataChannel;
     if (get().callMode !== 'video') return;
-    if (dataChannel?.readyState === 'open') {
-      dataChannel.send(JSON.stringify(payload));
-    }
+    if (dataChannel?.readyState === 'open') dataChannel.send(JSON.stringify(payload));
   },
 
   syncMediaState: () => {
@@ -51,8 +74,25 @@ export const useCallStore = create((set, get) => ({
         isMuted: get().isMuted,
         isCameraEnabled: get().isCameraEnabled,
         isScreenSharing: get().isScreenSharing,
+        isRecording: get().isRecording,
       },
     });
+  },
+
+  stopRecording: ({ keepRecording = false } = {}) => {
+    const { recorder, recordingTimer, recordingUrl } = get();
+    if (recordingTimer) window.clearInterval(recordingTimer);
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+    if (!keepRecording && recordingUrl) URL.revokeObjectURL(recordingUrl);
+    set({
+      recorder: null,
+      recordingTimer: null,
+      isRecording: false,
+      recordingSeconds: keepRecording ? get().recordingSeconds : 0,
+      recordingUrl: keepRecording ? recordingUrl : null,
+      recordingError: '',
+    });
+    get().syncMediaState();
   },
 
   teardownPeerOnly: () => {
@@ -70,15 +110,13 @@ export const useCallStore = create((set, get) => ({
       try { peerConnection.close(); } catch (error) { console.debug('Ignoring peer close failure', error); }
     }
     remoteStream?.getTracks().forEach((track) => track.stop());
-    if (previewStream && previewStream !== localStream && isScreenSharing) {
-      previewStream.getTracks().forEach((track) => track.stop());
-    }
+    if (previewStream && previewStream !== localStream && isScreenSharing) previewStream.getTracks().forEach((track) => track.stop());
     set({
       peerConnection: null,
       dataChannel: null,
       remoteStream: null,
       previewStream: localStream || null,
-      remoteMediaState: { isMuted: false, isCameraEnabled: true, isScreenSharing: false },
+      remoteMediaState: { isMuted: false, isCameraEnabled: true, isScreenSharing: false, isRecording: false },
       remoteLocation: null,
       collaborativePaths: [],
       remotePointer: null,
@@ -87,9 +125,11 @@ export const useCallStore = create((set, get) => ({
   },
 
   cleanupCall: () => {
-    const { localStream } = get();
+    const { localStream, recordingUrl } = get();
+    get().stopRecording();
     get().teardownPeerOnly();
     localStream?.getTracks().forEach((track) => track.stop());
+    if (recordingUrl) URL.revokeObjectURL(recordingUrl);
     set({
       localStream: null,
       previewStream: null,
@@ -101,6 +141,10 @@ export const useCallStore = create((set, get) => ({
       isMuted: false,
       isCameraEnabled: true,
       isScreenSharing: false,
+      isRecording: false,
+      recordingSeconds: 0,
+      recordingUrl: null,
+      recordingError: '',
     });
   },
 
@@ -148,20 +192,21 @@ export const useCallStore = create((set, get) => ({
     const socket = useAuthStore.getState().socket;
     const stream = await get().ensureLocalStream({ audio: true, video: get().callMode === 'video' });
     const peerConnection = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const inboundStream = new MediaStream();
 
     stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
+    set({ remoteStream: inboundStream });
 
-    if (get().callMode === 'video' && createDataChannel) {
-      get().attachRemoteDataChannel(peerConnection.createDataChannel('collaboration'));
-    }
+    if (get().callMode === 'video' && createDataChannel) get().attachRemoteDataChannel(peerConnection.createDataChannel('collaboration'));
 
     peerConnection.ondatachannel = (event) => get().attachRemoteDataChannel(event.channel);
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) socket?.emit('call:signal', { toUserId: targetUserId, candidate: event.candidate });
     };
     peerConnection.ontrack = (event) => {
-      const [streamTrack] = event.streams;
-      if (streamTrack) set({ remoteStream: streamTrack });
+      const nextRemoteStream = get().remoteStream || new MediaStream();
+      nextRemoteStream.addTrack(event.track);
+      set({ remoteStream: nextRemoteStream });
     };
 
     set({ peerConnection });
@@ -254,6 +299,38 @@ export const useCallStore = create((set, get) => ({
     get().syncMediaState();
   },
 
+  toggleRecording: async () => {
+    if (!get().localStream) return;
+    if (get().isRecording) {
+      get().stopRecording({ keepRecording: true });
+      toast.success('Call recording saved locally for this session.');
+      return;
+    }
+    try {
+      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+        ? 'video/webm;codecs=vp9,opus'
+        : 'video/webm';
+      const chunks = [];
+      const recorder = new MediaRecorder(get().callMode === 'video' ? get().localStream : new MediaStream(get().localStream.getAudioTracks()), { mimeType });
+      recorder.ondataavailable = (event) => { if (event.data.size > 0) chunks.push(event.data); };
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: mimeType });
+        const nextUrl = URL.createObjectURL(blob);
+        const previousUrl = get().recordingUrl;
+        if (previousUrl) URL.revokeObjectURL(previousUrl);
+        set({ recordingUrl: nextUrl, recorder: null });
+      };
+      recorder.start(1000);
+      const recordingTimer = window.setInterval(() => set((state) => ({ recordingSeconds: state.recordingSeconds + 1 })), 1000);
+      set({ isRecording: true, recordingSeconds: 0, recorder, recordingTimer, recordingError: '' });
+      get().syncMediaState();
+    } catch (error) {
+      console.error('Recording failed:', error);
+      set({ recordingError: 'Recording is not supported on this device/browser.' });
+      toast.error('Recording is not supported on this device/browser.');
+    }
+  },
+
   replaceVideoTrack: async (newTrack, { isScreenSharing = false } = {}) => {
     const { peerConnection, localStream } = get();
     const sender = peerConnection?.getSenders().find((item) => item.track?.kind === 'video');
@@ -308,14 +385,12 @@ export const useCallStore = create((set, get) => ({
     stroke.points.push({ x, y });
     set({ localDrawStroke: stroke });
   },
-
   extendStroke: ({ x, y }) => {
     if (get().callMode !== 'video') return;
     const stroke = get().localDrawStroke;
     if (!stroke) return;
     set({ localDrawStroke: { ...stroke, points: [...stroke.points, { x, y }] } });
   },
-
   finishStroke: () => {
     if (get().callMode !== 'video') return;
     const stroke = get().localDrawStroke;
@@ -326,7 +401,6 @@ export const useCallStore = create((set, get) => ({
     set((state) => ({ collaborativePaths: [...state.collaborativePaths, stroke].slice(-DRAW_HISTORY_LIMIT), localDrawStroke: null }));
     get().notifyPeer({ type: 'drawing:stroke', payload: stroke });
   },
-
   clearDrawings: () => {
     set({ collaborativePaths: [], localDrawStroke: null });
     get().notifyPeer({ type: 'drawing:clear' });
@@ -335,8 +409,7 @@ export const useCallStore = create((set, get) => ({
   subscribeToCallEvents: () => {
     const socket = useAuthStore.getState().socket;
     if (!socket) return;
-
-    ['call:incoming', 'call:accepted', 'call:declined', 'call:ended', 'call:signal', 'call:unavailable', 'call:resume', 'call:renegotiate'].forEach((event) => socket.off(event));
+    ['call:incoming', 'call:accepted', 'call:declined', 'call:ended', 'call:signal', 'call:unavailable', 'call:resume', 'call:renegotiate', 'call:missed'].forEach((event) => socket.off(event));
 
     socket.on('call:incoming', ({ fromUserId, fromUser, media, sessionId }) => {
       if (get().activeCallUser?._id || get().incomingCall?.fromUserId) {
@@ -364,9 +437,10 @@ export const useCallStore = create((set, get) => ({
       try {
         let peerConnection = get().peerConnection;
         if (!peerConnection) peerConnection = await get().createPeerConnection(fromUserId, { createDataChannel: false });
-
         if (description) {
-          await peerConnection.setRemoteDescription(new RTCSessionDescription(description));
+          if (!peerConnection.currentRemoteDescription || peerConnection.currentRemoteDescription.type !== description.type) {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(description));
+          }
           if (description.type === 'offer') {
             const answer = await peerConnection.createAnswer();
             await peerConnection.setLocalDescription(answer);
@@ -375,7 +449,6 @@ export const useCallStore = create((set, get) => ({
           set({ callStatus: 'connected' });
           get().syncMediaState();
         }
-
         if (candidate) await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
       } catch (error) {
         console.error('Error handling call signal:', error);
@@ -390,41 +463,34 @@ export const useCallStore = create((set, get) => ({
         set({ incomingCall: { fromUserId: otherUser._id, fromUser: otherUser, media, sessionId }, callStatus: 'ringing', callMode: media?.video ? 'video' : 'voice', sessionId });
         return;
       }
-      if (status === 'active') {
-        await get().restoreActiveCall({ sessionId, otherUser, media });
-      }
+      if (status === 'active') await get().restoreActiveCall({ sessionId, otherUser, media });
     });
 
     socket.on('call:renegotiate', async ({ toUserId, media, sessionId }) => {
       if (get().activeCallUser?._id !== toUserId && get().activeCallUser?._id) return;
       set({ callMode: media?.video ? 'video' : 'voice', sessionId: sessionId || get().sessionId });
-      try {
-        await get().createOfferFor(toUserId);
-      } catch (error) {
-        console.error('Error renegotiating call:', error);
-      }
+      try { await get().createOfferFor(toUserId); } catch (error) { console.error('Error renegotiating call:', error); }
     });
 
     socket.on('call:declined', () => {
       toast.error(get().callMode === 'video' ? 'Video call declined.' : 'Voice call declined.');
       get().cleanupCall();
     });
-
     socket.on('call:ended', () => {
       toast(get().callMode === 'video' ? 'Video call ended.' : 'Voice call ended.');
       get().cleanupCall();
     });
-
     socket.on('call:unavailable', () => {
       toast.error(get().callMode === 'video' ? 'This user is offline or unavailable for video calling.' : 'This user is offline or unavailable for voice calling.');
       get().cleanupCall();
     });
+    socket.on('call:missed', (payload) => get().pushMissedCall(payload));
 
     socket.emit('call:resume:request');
   },
 
   unsubscribeFromCallEvents: () => {
     const socket = useAuthStore.getState().socket;
-    ['call:incoming', 'call:accepted', 'call:declined', 'call:ended', 'call:signal', 'call:unavailable', 'call:resume', 'call:renegotiate'].forEach((event) => socket?.off(event));
+    ['call:incoming', 'call:accepted', 'call:declined', 'call:ended', 'call:signal', 'call:unavailable', 'call:resume', 'call:renegotiate', 'call:missed'].forEach((event) => socket?.off(event));
   },
 }));
