@@ -39,7 +39,34 @@ const syncChatAfterDeletion = (chats, chatUserId, lastMessage) =>
     chats.map((chat) => (chat._id === chatUserId ? { ...chat, lastMessage: lastMessage || null, unreadCount: lastMessage ? chat.unreadCount : 0 } : chat)),
   );
 
+const updatePersonRelationship = (people, userId, updates) =>
+  people.map((person) => (person._id === userId ? { ...person, ...updates } : person));
+
 let typingTimeout = null;
+
+const clearBrowserSession = async () => {
+  try {
+    await api.get('/auth/logout');
+  } catch (error) {
+    console.error('Error clearing auth cookie:', error);
+  }
+
+  try {
+    localStorage.clear();
+    sessionStorage.clear();
+    document.cookie.split(';').forEach((cookie) => {
+      const [name] = cookie.split('=');
+      if (!name) return;
+      const trimmedName = name.trim();
+      const expiration = 'expires=Thu, 01 Jan 1970 00:00:00 GMT';
+      document.cookie = `${trimmedName}=; ${expiration}; path=/`;
+      document.cookie = `${trimmedName}=; ${expiration}; path=/; domain=localhost`;
+      document.cookie = `${trimmedName}=; ${expiration}; path=/; domain=.localhost`;
+    });
+  } catch (error) {
+    console.error('Error clearing browser session:', error);
+  }
+};
 
 export const useChatStore = create((set, get) => ({
   people: [],
@@ -146,14 +173,35 @@ export const useChatStore = create((set, get) => ({
     return res.data.friends;
   },
   sendFriendRequest: async (userId) => {
-    await api.post(`/message/friend-request/${userId}`);
-    toast.success('Friend request sent');
-    await Promise.all([get().getPeople(), get().getFriends()]);
+    try {
+      await api.post(`/message/friend-request/${userId}`);
+      set({ people: updatePersonRelationship(get().people, userId, { requestSent: true, requestReceived: false, isFriend: false }) });
+      toast.success('Friend request sent');
+    } catch (error) {
+      if (error.response?.status === 404 && error.response?.data?.message === 'User not found') {
+        await clearBrowserSession();
+      }
+      throw error;
+    }
   },
   respondToFriendRequest: async (userId, accept) => {
-    await api.post(`/message/friend-request/${userId}/respond`, { accept });
-    toast.success(accept ? 'Friend request accepted' : 'Friend request declined');
-    await Promise.all([get().getPeople(), get().getFriends()]);
+    try {
+      await api.post(`/message/friend-request/${userId}/respond`, { accept });
+      const nextPeople = updatePersonRelationship(get().people, userId, {
+        requestReceived: false,
+        requestSent: false,
+        isFriend: Boolean(accept),
+      });
+      const acceptedUser = nextPeople.find((person) => person._id === userId) || get().people.find((person) => person._id === userId) || null;
+      set({ people: nextPeople, activeTab: accept ? 'chats' : get().activeTab, ...(accept ? { selectedUser: acceptedUser } : {}) });
+      toast.success(accept ? 'Friend request accepted' : 'Friend request declined');
+      await Promise.all([get().getFriends(), get().getChats(), accept ? get().getMessagesByUserId(userId) : Promise.resolve()]);
+    } catch (error) {
+      if (error.response?.status === 404 && error.response?.data?.message === 'User not found') {
+        await clearBrowserSession();
+      }
+      throw error;
+    }
   },
 
   getChats: async () => {
@@ -281,9 +329,21 @@ export const useChatStore = create((set, get) => ({
     socket.on('messages:delivered', ({ receiverId, messageIds }) => {
       set({ messages: get().messages.map((msg) => messageIds.includes(msg._id) ? { ...msg, deliveredTo: [...new Set([...(msg.deliveredTo || []), receiverId])] } : msg) });
     });
-    socket.on('friend:request:received', async () => { await get().getPeople(); toast.success('You received a friend request'); });
+    socket.on('friend:request:received', async ({ fromUser }) => {
+      if (fromUser?._id) {
+        set({ people: updatePersonRelationship(get().people, fromUser._id, { requestReceived: true, requestSent: false, isFriend: false }) });
+      }
+      await get().getPeople();
+      toast.success('You received a friend request');
+    });
     socket.on('friend:request:responded', async ({ accepted, user }) => {
-      await Promise.all([get().getPeople(), get().getFriends()]);
+      const nextPeople = updatePersonRelationship(get().people, user?._id, {
+        requestReceived: false,
+        requestSent: false,
+        isFriend: Boolean(accepted),
+      });
+      set({ people: nextPeople, activeTab: accepted ? 'chats' : get().activeTab, ...(accepted ? { selectedUser: user || get().selectedUser } : {}) });
+      await Promise.all([get().getFriends(), get().getChats(), accepted && user?._id ? get().getMessagesByUserId(user._id) : Promise.resolve()]);
       toast.success(accepted ? `@${user?.username} accepted your friend request` : `@${user?.username} declined your friend request`);
     });
     socket.on('chat:last-message', (message) => {

@@ -7,7 +7,7 @@ router.use(arjectProtection);
 router.get('/username-suggestions', authController.suggestUsernames);
 router.post('/login', authController.login);
 router.post('/register', authController.register);
-router.get('/logout',protectRoute, authController.logout);
+router.get('/logout', authController.logout);
 router.put('/update-profile',protectRoute, authController.updateProfile);
 router.get('/check-auth', protectRoute, (req, res) => { res.status(200).json({ message: 'Authenticated', data: req.user });});
 router.get('/user-info/:id', protectRoute, authController.getUserInfo);
