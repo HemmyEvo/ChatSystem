@@ -4,13 +4,16 @@ import LoginPage from './pages/LoginPage';
 import SignUpPage from './pages/SignUpPage';
 import { useAuthStore } from './store/useAuthStore';
 import { useGameStore } from './store/useGameStore';
+import { useCallStore } from './store/useCallStore';
 import { useEffect } from 'react';
 import PageLoader from './components/PageLoader';
 import { Toaster } from 'react-hot-toast';
+import CallLayer from './components/CallLayer';
 
 function App() {
   const { checkAuth, isCheckingAuth, authUser, socket } = useAuthStore();
   const { subscribeGameEvents } = useGameStore();
+  const { subscribeToCallEvents, unsubscribeFromCallEvents } = useCallStore();
 
   useEffect(() => {
     checkAuth();
@@ -66,6 +69,7 @@ function App() {
 
     const bindGameEvents = () => {
       subscribeGameEvents();
+      subscribeToCallEvents();
     };
 
     if (socket.connected) {
@@ -75,8 +79,9 @@ function App() {
     socket.on('connect', bindGameEvents);
     return () => {
       socket.off('connect', bindGameEvents);
+      unsubscribeFromCallEvents();
     };
-  }, [socket, subscribeGameEvents]);
+  }, [socket, subscribeGameEvents, subscribeToCallEvents, unsubscribeFromCallEvents]);
 
   if (isCheckingAuth) return <PageLoader />;
 
@@ -90,6 +95,7 @@ function App() {
         <Route path='/login' element={authUser ? <Navigate to={'/'} /> : <LoginPage />} />
         <Route path='/signup' element={authUser ? <Navigate to={'/'} /> : <SignUpPage />} />
       </Routes>
+      <CallLayer />
       <Toaster />
     </div>
   );
