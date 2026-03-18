@@ -102,9 +102,6 @@ const hasAnyValidMove = (tokens, diceValues) => {
   ));
 };
 
-const hasRemainingTokens = (tokens) => tokens.some((token) => token.pos !== -2);
-
-
 const buildPublicState = (session, viewerId) => {
   if (session.gameType === 'whot') {
     const opponentId = session.players.find((id) => id !== viewerId);
@@ -130,7 +127,7 @@ const buildPublicState = (session, viewerId) => {
     gameType: session.gameType,
     status: session.status,
     currentPlayer: session.state.currentPlayer,
-    diceValue1: session.state.diceValues[0] || null, // Map array back to distinct values for frontend
+    diceValue1: session.state.diceValues[0] || null,
     diceValue2: session.state.diceValues[1] || null,
     tokens: session.state.tokens,
     winnerId: session.state.winnerId,
@@ -178,7 +175,7 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
   if (session.state.currentPlayer !== playerId) return { error: 'Wait for your turn.' };
 
   if (session.gameType === 'whot') {
-    // ... [WHOT logic remains exactly as you had it] ...
+    // --- WHOT ACTION LOGIC ---
     const hand = session.state.hands[playerId];
     const topCard = session.state.discard[session.state.discard.length - 1];
 
@@ -225,7 +222,7 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
     }
 
   } else {
-    // LUDO LOGIC
+    // --- LUDO ACTION LOGIC ---
     const playerTokens = session.state.tokens[playerId];
 
     if (action.type === 'roll') {
@@ -246,17 +243,20 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
       if (session.state.diceValues.length === 0) return { error: 'Roll the dice first.' };
 
       const tokenIndex = Number(action.tokenIndex);
-      if (Number.isNaN(tokenIndex) || tokenIndex < 0 || tokenIndex >= playerTokens.length) return { error: 'Invalid token.' };
+      if (Number.isNaN(tokenIndex) || tokenIndex < 0 || tokenIndex >= playerTokens.length) {
+        return { error: 'Invalid token.' };
+      }
 
       const token = playerTokens[tokenIndex];
+      const previousPos = token.pos;
       let nextPos = token.pos;
       const diceValues = session.state.diceValues;
       const requestedDieIndex = Number.isInteger(action.dieIndex) ? action.dieIndex : null;
       let diceToConsume = [];
 
+      // Logic to pull token from Base
       if (token.pos === -1) {
         const selectedDie = requestedDieIndex !== null ? diceValues[requestedDieIndex] : null;
-        const selectedOtherDie = requestedDieIndex !== null && diceValues.length === 2 ? diceValues[requestedDieIndex === 0 ? 1 : 0] : null;
 
         if (selectedDie === 6) {
           diceToConsume = [requestedDieIndex];
@@ -268,49 +268,91 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
           return { error: 'Need a single die showing 6 to bring token out.' };
         }
       } else {
-        let usableDieIndex = -1;
-
-        if (requestedDieIndex !== null) {
+        // Logic for Track Movement
+        if (action.useTotal && diceValues.length > 1) {
+          const sum = diceValues.reduce((a, b) => a + b, 0);
+          if (token.pos + sum > 57) return { error: 'Total move overshoots home.' };
+          diceToConsume = diceValues.map((_, i) => i);
+          nextPos = token.pos + sum;
+        } else if (requestedDieIndex !== null) {
           if (requestedDieIndex < 0 || requestedDieIndex >= diceValues.length) {
             return { error: 'Choose a valid die first.' };
           }
           if (token.pos + diceValues[requestedDieIndex] > 57) {
             return { error: 'That die overshoots home for this token.' };
           }
-          usableDieIndex = requestedDieIndex;
+          diceToConsume = [requestedDieIndex];
+          nextPos = token.pos + diceValues[requestedDieIndex];
         } else {
-          usableDieIndex = diceValues.findIndex((die) => token.pos + die <= 57);
+          const usableDieIndex = diceValues.findIndex((die) => token.pos + die <= 57);
           if (usableDieIndex === -1) return { error: 'No valid moves for this token with current dice.' };
+          diceToConsume = [usableDieIndex];
+          nextPos = token.pos + diceValues[usableDieIndex];
         }
-
-        diceToConsume = [usableDieIndex];
-        nextPos = token.pos + diceValues[usableDieIndex];
       }
 
-      const previousPos = token.pos;
-      token.pos = nextPos;
+      const opponentId = session.players.find((id) => id !== playerId);
+      const opponentTokens = session.state.tokens[opponentId];
+      let isKill = false;
+      let tokensToKill = [];
+      const capturedTokens = [];
+
+      // Check if destination is occupied by an opponent
+      if (nextPos !== 0) {
+        const myUniversalPos = getUniversalPos(nextPos, token.color);
+        if (myUniversalPos !== -1 && !ludoSafeSpots.has(myUniversalPos)) {
+          opponentTokens.forEach((oppToken, oppIndex) => {
+            if (getUniversalPos(oppToken.pos, oppToken.color) === myUniversalPos) {
+              isKill = true;
+              tokensToKill.push({ token: oppToken, index: oppIndex });
+            }
+          });
+        }
+      }
+
+      // MANDATORY REMAINDER CHECK: Validate if player can consume leftover dice after a kill
+      if (isKill) {
+        const remainingDiceCount = diceValues.length - diceToConsume.length;
+        if (remainingDiceCount > 0) {
+          const remainingDice = diceValues.filter((_, i) => !diceToConsume.includes(i));
+          
+          // Check if there is AT LEAST ONE other token that can legally use the remaining dice
+          const hasOtherPlayableTokens = playerTokens.some((t, idx) => {
+            if (idx === tokenIndex) return false; // This token will be removed, can't use it
+            if (t.pos === -1 && remainingDice.includes(6)) return true; // Token in base can come out
+            if (t.pos >= 0 && t.pos < 57) {
+              return remainingDice.some(d => t.pos + d <= 57); // Active token can move
+            }
+            return false;
+          });
+
+          if (!hasOtherPlayableTokens) {
+            return { error: 'Move blocked: You cannot kill because you have no other tokens to play your remaining dice.' };
+          }
+        }
+      }
+
+      // Execute Move and Deduct Dice
       diceToConsume.sort((a, b) => b - a).forEach((dieIndex) => {
         session.state.diceValues.splice(dieIndex, 1);
       });
 
-      const capturedTokens = [];
-      const myUniversalPos = getUniversalPos(token.pos, token.color);
-
-      if (myUniversalPos !== -1 && !ludoSafeSpots.has(myUniversalPos)) {
-        const opponentId = session.players.find((id) => id !== playerId);
-        const opponentTokens = session.state.tokens[opponentId];
-
-        opponentTokens.forEach((oppToken, opponentTokenIndex) => {
-          if (getUniversalPos(oppToken.pos, oppToken.color) === myUniversalPos) {
-            capturedTokens.push({
-              playerId: opponentId,
-              tokenIndex: opponentTokenIndex,
-              color: oppToken.color,
-              fromPos: oppToken.pos,
-            });
-            oppToken.pos = -2;
-          }
+      // Execute Kill Logic
+      if (isKill) {
+        tokensToKill.forEach(({ token: oppToken, index: oppIdx }) => {
+          capturedTokens.push({
+            playerId: opponentId,
+            tokenIndex: oppIdx,
+            color: oppToken.color,
+            fromPos: oppToken.pos,
+          });
+          oppToken.pos = -1; // Opponent killed: Reset to Home
         });
+        
+        token.pos = -2; // Killer token is removed from board
+        session.state.hasBonusRoll = true;
+      } else {
+        token.pos = nextPos;
       }
 
       session.state.lastMove = {
@@ -321,21 +363,21 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
         fromPos: previousPos,
         toPos: token.pos,
         capturedTokens,
-        reachedHome: token.pos === 57,
+        reachedHome: token.pos === 57 || token.pos === -2,
       };
 
-      if (playerTokens.every((playerToken) => playerToken.pos === 57)) {
+      // Check Completion (57 = Reached Home, -2 = Completed via kamikaze kill)
+      const isPlayerFinished = (tokens) => tokens.every((t) => t.pos === 57 || t.pos === -2);
+
+      if (isPlayerFinished(playerTokens)) {
         session.state.winnerId = playerId;
+        session.status = 'completed';
+      } else if (isPlayerFinished(opponentTokens)) {
+        session.state.winnerId = opponentId;
         session.status = 'completed';
       }
 
-      const opponentId = session.players.find((id) => id !== playerId);
-      const opponentTokens = session.state.tokens[opponentId];
-      if (session.status === 'active' && !hasRemainingTokens(opponentTokens)) {
-        session.state.winnerId = playerId;
-        session.status = 'completed';
-      }
-
+      // Turn Management 
       if (session.state.diceValues.length === 0 && session.status === 'active') {
         if (session.state.hasBonusRoll) {
           session.state.hasBonusRoll = false;

@@ -48,7 +48,7 @@ const WhotCardDesign = ({ card, playable, onPlay, disabled }) => {
   );
 };
 
-const Dice3D = ({ value, rolling, disabled, onClick, selected }) => {
+const Dice3D = ({ value, rolling, disabled, onClick, selected, consumed }) => {
   const rotations = {
     1: 'rotateX(0deg) rotateY(0deg)',
     2: 'rotateY(-90deg)',
@@ -77,7 +77,7 @@ const Dice3D = ({ value, rolling, disabled, onClick, selected }) => {
       onClick={onClick}
       disabled={disabled}
       style={{ perspective: '800px' }}
-      className={`w-14 h-14 rounded-xl transition-all ${disabled ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover:scale-105 active:scale-95'} ${selected ? 'ring-4 ring-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.45)]' : ''}`}
+      className={`w-14 h-14 rounded-xl transition-all ${consumed ? 'opacity-40 grayscale cursor-not-allowed' : disabled ? 'cursor-not-allowed opacity-90' : 'cursor-pointer hover:scale-105 active:scale-95'} ${selected ? 'ring-4 ring-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.45)]' : ''}`}
     >
       <div
         className={`relative w-full h-full transition-transform ${rolling ? 'duration-300 ease-linear' : 'duration-700 ease-out'}`}
@@ -194,6 +194,8 @@ const NigerianLudoBoard = ({ game, onMove, onRoll, selectedDieIndex, onSelectDie
   const [diceRolling, setDiceRolling] = useState(false);
   const [dice1, setDice1] = useState(1);
   const [dice2, setDice2] = useState(1);
+  const [die1Active, setDie1Active] = useState(false);
+  const [die2Active, setDie2Active] = useState(false);
   const lastMoveSoundIdRef = useRef(null);
   const moveSoundRef = useRef(null);
   const captureSoundRef = useRef(null);
@@ -233,6 +235,7 @@ const NigerianLudoBoard = ({ game, onMove, onRoll, selectedDieIndex, onSelectDie
   ];
 
   const availableDice = [game.diceValue1, game.diceValue2].filter((value) => value !== null && value !== undefined);
+  const hasDice = game.diceValue1 != null || game.diceValue2 != null;
 
   useEffect(() => {
     moveSoundRef.current = new Audio('/sounds/mouse-click.mp3');
@@ -274,6 +277,8 @@ const NigerianLudoBoard = ({ game, onMove, onRoll, selectedDieIndex, onSelectDie
   const handleRoll = () => {
     if (!myTurn || game.diceValue1 || game.diceValue2 || diceRolling) return;
     setDiceRolling(true);
+    setDie1Active(true);
+    setDie2Active(true);
     const r1 = Math.floor(Math.random() * 6) + 1;
     const r2 = Math.floor(Math.random() * 6) + 1;
     setTimeout(() => {
@@ -286,35 +291,42 @@ const NigerianLudoBoard = ({ game, onMove, onRoll, selectedDieIndex, onSelectDie
 
   useEffect(() => {
     if (!diceRolling) {
-      if (game.diceValue1 !== null && game.diceValue1 !== undefined) setDice1(game.diceValue1);
-      if (game.diceValue2 !== null && game.diceValue2 !== undefined) setDice2(game.diceValue2);
+      const g1 = game.diceValue1;
+      const g2 = game.diceValue2;
+      const hasG1 = g1 !== null && g1 !== undefined;
+      const hasG2 = g2 !== null && g2 !== undefined;
+
+      if (hasG1 && hasG2) {
+        setDice1(g1);
+        setDice2(g2);
+        setDie1Active(true);
+        setDie2Active(true);
+      } else if (hasG1 && !hasG2) {
+        if (die1Active && die2Active) {
+          if (g1 === dice2 && g1 !== dice1) {
+            setDie1Active(false);
+          } else if (g1 === dice1 && g1 !== dice2) {
+            setDie2Active(false);
+          } else {
+            setDie2Active(false);
+          }
+        } else if (!die1Active && !die2Active) {
+          setDice1(g1);
+          setDie1Active(true);
+          setDie2Active(false);
+        }
+      } else {
+        setDie1Active(false);
+        setDie2Active(false);
+      }
     }
-  }, [game.diceValue1, game.diceValue2, diceRolling]);
+  }, [game.diceValue1, game.diceValue2, diceRolling, dice1, dice2, die1Active, die2Active]);
 
   return (
     <div className="flex-1 p-2 sm:p-6 flex flex-col items-center gap-4">
       <div className={`px-8 py-3 rounded-full text-white font-black text-lg shadow-xl border-2 ${myTurn ? 'bg-green-600 border-green-400 animate-pulse' : 'bg-red-600 border-red-800'}`}>
         {myTurn ? '🎲 YOUR TURN!' : '👤 OPPONENT\'S TURN'}
-        {(game.diceValue1 || game.diceValue2) && ` • Rolled: ${game.diceValue1 || '-'} & ${game.diceValue2 || '-'}`}
       </div>
-
-      {!!availableDice.length && myTurn && (
-        <div className="bg-black/30 border border-white/10 rounded-2xl px-4 py-3 text-white flex flex-col items-center gap-2">
-          <div className="text-sm font-semibold text-yellow-300">Choose the die to count first</div>
-          <div className="flex items-center gap-2 flex-wrap justify-center">
-            {availableDice.map((value, index) => (
-              <button
-                key={`${value}-${index}`}
-                type="button"
-                onClick={() => onSelectDie(index)}
-                className={`px-4 py-2 rounded-full border text-sm font-bold transition ${selectedDieIndex === index ? 'bg-yellow-400 text-black border-yellow-200 shadow-lg' : 'bg-white/10 border-white/15 hover:bg-white/20'}`}
-              >
-                Use {value}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       <div className="relative w-full max-w-[600px] aspect-square bg-[#0a230f] rounded-lg p-2 sm:p-4 shadow-[0_20px_50px_rgba(0,0,0,0.5)] border-8 border-[#3b1c0a]">
         <div className="relative w-full h-full bg-white shadow-inner overflow-hidden border-2 border-black">
@@ -389,16 +401,18 @@ const NigerianLudoBoard = ({ game, onMove, onRoll, selectedDieIndex, onSelectDie
               <Dice3D
                 value={dice1}
                 rolling={diceRolling}
-                onClick={game.diceValue1 || game.diceValue2 ? () => onSelectDie(0) : handleRoll}
-                disabled={!myTurn || diceRolling}
-                selected={selectedDieIndex === 0 && availableDice.length > 1}
+                onClick={hasDice ? () => onSelectDie(selectedDieIndex === 0 ? null : 0) : handleRoll}
+                disabled={!myTurn || diceRolling || (hasDice && !die1Active)}
+                consumed={hasDice && !die1Active}
+                selected={selectedDieIndex === 0 && die1Active && die2Active}
               />
               <Dice3D
                 value={dice2}
                 rolling={diceRolling}
-                onClick={game.diceValue1 || game.diceValue2 ? () => onSelectDie(1) : handleRoll}
-                disabled={!myTurn || diceRolling || (!game.diceValue2 && !diceRolling && !(!game.diceValue1 && !game.diceValue2))}
-                selected={selectedDieIndex === 1 && availableDice.length > 1}
+                onClick={hasDice ? () => onSelectDie(selectedDieIndex === 1 ? null : 1) : handleRoll}
+                disabled={!myTurn || diceRolling || (hasDice && !die2Active)}
+                consumed={hasDice && !die2Active}
+                selected={selectedDieIndex === 1 && die1Active && die2Active}
               />
             </div>
           </div>
@@ -457,8 +471,6 @@ const NigerianWhotView = ({ game, onPlayCard, onDraw }) => {
           <span className={myTurn ? 'text-yellow-300' : 'text-gray-300'}>
             {myTurn ? '🎮 Your Turn' : '⏳ Opponent\'s Turn'}
           </span>
-          {game.requestedSuit && <span className="ml-3 px-2 py-1 bg-yellow-500/30 rounded-full text-sm">Requested: {game.requestedSuit}</span>}
-          {game.pendingDraw > 0 && <span className="ml-3 px-2 py-1 bg-red-500/30 rounded-full text-sm">Draw {game.pendingDraw} cards!</span>}
         </div>
       </div>
 
@@ -514,7 +526,6 @@ export default function GameLayer() {
     dashboard,
     isDashboardVisible,
     forfeitGame,
-    closeGame,
     sendAction,
     missedGameCalls,
     roomRecovery,
@@ -523,13 +534,20 @@ export default function GameLayer() {
   const me = useAuthStore((s) => s.authUser);
   const [selectedDieIndex, setSelectedDieIndex] = useState(null);
 
-
   const diceValues = activeGame ? [activeGame.diceValue1, activeGame.diceValue2].filter((value) => value !== null && value !== undefined) : [];
   const effectiveSelectedDieIndex = diceValues.length > 1 && selectedDieIndex !== null && selectedDieIndex < diceValues.length ? selectedDieIndex : null;
 
   const handlePlayCard = (cardId, requestedSuit) => sendAction({ type: 'play', cardId, requestedSuit });
   const handleDrawCard = () => sendAction({ type: 'draw' });
-  const handleMoveToken = (tokenIndex) => sendAction({ type: 'move', tokenIndex, dieIndex: effectiveSelectedDieIndex });
+  const handleMoveToken = (tokenIndex) => {
+    const isTotal = effectiveSelectedDieIndex === null;
+    sendAction({ 
+        type: 'move', 
+        tokenIndex, 
+        dieIndex: effectiveSelectedDieIndex,
+        useTotal: isTotal 
+    });
+  };
   const handleRollDice = (diceValues) => sendAction({ type: 'roll', dice1: diceValues[0], dice2: diceValues[1] });
 
   return (
@@ -588,13 +606,12 @@ export default function GameLayer() {
               <div className="flex items-center gap-3">
                 <span className="text-4xl">🎲</span>
                 <div>
-                  <h2 className="text-3xl font-bold">{activeGame.gameType === 'whot' ? '🇳🇬 WHOT' : '🇳🇬 LUDO'}</h2>
-                  <p className="text-sm opacity-80">Nigerian Classic</p>
+                  <h2 className="text-3xl font-bold">{activeGame.gameType === 'whot' ? 'WHOT' : 'LUDO'}</h2>
+                  <p className="text-sm opacity-80">Existo app</p>
                 </div>
               </div>
               <div className="flex gap-2">
                 <button onClick={forfeitGame} className="px-4 py-2 bg-red-600 rounded-full font-bold hover:bg-red-700 transition">Forfeit</button>
-                {!roomRecovery && <button onClick={closeGame} className="px-4 py-2 bg-gray-700 rounded-full font-bold hover:bg-gray-600 transition">Close</button>}
               </div>
             </div>
           </div>
