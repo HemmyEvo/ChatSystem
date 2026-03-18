@@ -312,8 +312,9 @@ function CallLayer() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,#0f172a,#020617_70%)]" />
         <div className="relative min-h-[100dvh]">
           {isMobileViewport ? (
-            <div className="flex h-full flex-col px-3 pb-4 pt-3">
-              <section className="relative min-h-0 flex-1 overflow-hidden rounded-[2rem] border border-white/10 bg-black shadow-2xl">
+            <div className="flex h-full flex-col justify-between gap-4 px-3 pb-4 pt-3">
+              {/* MOBILE ONLY FIX: Video box now has max-h-[60vh] and w-full */}
+              <section className="relative w-full max-h-[60vh] flex-1 shrink-0 overflow-hidden rounded-[2rem] border border-white/10 bg-black shadow-2xl">
                 <VideoSurface stream={remoteStream} fallbackAvatar={avatar} title={title} subtitle={remoteSubtitle} />
                 <DrawingCanvas
                   strokes={collaborativePaths}
@@ -331,25 +332,27 @@ function CallLayer() {
                     <VideoSurface stream={previewStream} fallbackAvatar={authUser?.profilePicture || '/avatar.png'} title="You" subtitle={isScreenSharing ? 'Screen' : 'Preview'} muted mirrored={!isScreenSharing} />
                   </div>
                 </div>
-                <div className="absolute inset-x-3 bottom-3 z-20 space-y-3">
-                  <div className="flex flex-wrap gap-2">
-                    <div className="rounded-full border border-white/10 bg-black/40 px-3 py-1 text-xs text-slate-100 backdrop-blur-md">{connectionLabel}</div>
-                    {isRecording && <div className="inline-flex items-center gap-2 rounded-full bg-rose-500 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em]"><CircleDot size={14} /> {formatDuration(recordingSeconds)}</div>}
-                    {remoteMediaState.isRecording && <div className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-3 py-1 text-xs font-semibold text-slate-950"><CircleDot size={14} /> Recording</div>}
-                    {remoteLocation && <a href={`https://www.google.com/maps?q=${remoteLocation.lat},${remoteLocation.lng}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1 text-xs text-slate-100 backdrop-blur-md"><MapPin size={14} /> Location</a>}
-                    {recordingUrl && <a href={recordingUrl} download="call-recording.webm" className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1 text-xs text-slate-100 backdrop-blur-md"><Download size={14} /> Download</a>}
+              </section>
+
+              {/* MOBILE ONLY FIX: Action buttons pulled outside the absolute positioning so they no longer overlap the video */}
+              <div className="z-20 mt-auto w-full space-y-3">
+                <div className="flex flex-wrap gap-2">
+                  <div className="rounded-full border border-white/10 bg-black/40 px-3 py-1 text-xs text-slate-100 backdrop-blur-md">{connectionLabel}</div>
+                  {isRecording && <div className="inline-flex items-center gap-2 rounded-full bg-rose-500 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em]"><CircleDot size={14} /> {formatDuration(recordingSeconds)}</div>}
+                  {remoteMediaState.isRecording && <div className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-3 py-1 text-xs font-semibold text-slate-950"><CircleDot size={14} /> Recording</div>}
+                  {remoteLocation && <a href={`https://www.google.com/maps?q=${remoteLocation.lat},${remoteLocation.lng}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1 text-xs text-slate-100 backdrop-blur-md"><MapPin size={14} /> Location</a>}
+                  {recordingUrl && <a href={recordingUrl} download="call-recording.webm" className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1 text-xs text-slate-100 backdrop-blur-md"><Download size={14} /> Download</a>}
+                </div>
+                <div className="rounded-[2rem] border border-white/10 bg-slate-950/70 p-3 backdrop-blur-xl">
+                  <div className="mb-3 grid grid-cols-2 gap-2 text-xs text-slate-300">
+                    <div className="rounded-2xl bg-white/5 px-3 py-2">You: {isMuted ? 'Muted' : 'Mic on'} • {isCameraEnabled ? 'Camera on' : 'Camera off'}</div>
+                    <div className="rounded-2xl bg-white/5 px-3 py-2">{title}: {remoteMediaState.isMuted ? 'Muted' : 'Mic on'} • {remoteMediaState.isCameraEnabled ? 'Camera on' : 'Camera off'}</div>
                   </div>
-                  <div className="rounded-[2rem] border border-white/10 bg-slate-950/70 p-3 backdrop-blur-xl">
-                    <div className="mb-3 grid grid-cols-2 gap-2 text-xs text-slate-300">
-                      <div className="rounded-2xl bg-white/5 px-3 py-2">You: {isMuted ? 'Muted' : 'Mic on'} • {isCameraEnabled ? 'Camera on' : 'Camera off'}</div>
-                      <div className="rounded-2xl bg-white/5 px-3 py-2">{title}: {remoteMediaState.isMuted ? 'Muted' : 'Mic on'} • {remoteMediaState.isCameraEnabled ? 'Camera on' : 'Camera off'}</div>
-                    </div>
-                    <div className="grid grid-cols-4 gap-2">
-                      {renderToolButtons(true)}
-                    </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {renderToolButtons(true)}
                   </div>
                 </div>
-              </section>
+              </div>
             </div>
           ) : (
             <div className="flex h-full flex-col p-4 lg:p-6">
@@ -370,7 +373,7 @@ function CallLayer() {
                     </div>
                     <div className="flex flex-wrap justify-end gap-2">
                       {isRecording && <div className="inline-flex items-center gap-2 rounded-full bg-rose-500 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em]"><CircleDot size={14} /> Recording {formatDuration(recordingSeconds)}</div>}
-                      {remoteMediaState.isRecording && <div className="inline-flex items-center gap-2 rounded-full bg-amber-500/90 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-950"><CircleDot size={14} /> They&apos;re recording</div>}
+                      {remoteMediaState.isRecording && <div className="inline-flex items-center gap-2 rounded-full bg-amber-500/90 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-950"><CircleDot size={14} /> They're recording</div>}
                       {remoteLocation && <a href={`https://www.google.com/maps?q=${remoteLocation.lat},${remoteLocation.lng}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/35 px-3 py-1 text-xs text-slate-100 backdrop-blur-md"><MapPin size={14} /> Open shared location</a>}
                     </div>
                   </div>
