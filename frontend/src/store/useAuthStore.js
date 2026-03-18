@@ -31,7 +31,7 @@ export const useAuthStore = create((set, get) => ({
     set({ isloggingin: true });
     try {
       const res = await api.post('/auth/login', data);
-      set({ authUser: { ...res.data.data, _id: res.data.data.id } });
+      set({ authUser: res.data.data });
       useAuthStore.getState().checkAuth();
       toast.success('Login successful!');
       get().connectSocket();
@@ -48,13 +48,16 @@ export const useAuthStore = create((set, get) => ({
     set({ isSigningup: true });
     try {
       const res = await api.post('/auth/register', data);
-      set({ authUser: { ...res.data.data, _id: res.data.data.id } });
+      set({ authUser: res.data.data });
       useAuthStore.getState().checkAuth();
       toast.success('Account created successfully!');
       get().connectSocket();
+      return res.data;
     } catch (error) {
       console.error('Error signing up:', error);
-      toast.error(error.response?.data?.message || 'Failed to sign up');
+      if (error.response?.status !== 409) {
+        toast.error(error.response?.data?.message || 'Failed to sign up');
+      }
       throw error;
     } finally {
       set({ isSigningup: false });
@@ -86,6 +89,11 @@ export const useAuthStore = create((set, get) => ({
       console.log('Error in update profile:', error);
       toast.error(error.response?.data?.message || 'Failed to update profile');
     }
+  },
+
+  fetchUsernameSuggestions: async (username) => {
+    const res = await api.get('/auth/username-suggestions', { params: { username } });
+    return res.data;
   },
 
   connectSocket: () => {
