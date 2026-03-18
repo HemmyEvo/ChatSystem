@@ -17,6 +17,8 @@ export const useGameStore = create((set, get) => ({
   activeGame: null,
   dashboard: null,
   isDashboardVisible: false,
+  missedGameCalls: [],
+  roomRecovery: false,
 
   startInvite: (gameType, toUserId) => {
     const socket = useAuthStore.getState().socket;
@@ -51,7 +53,8 @@ export const useGameStore = create((set, get) => ({
     const game = get().activeGame;
     if (!socket?.connected || !game) return;
     socket.emit('game:forfeit', { sessionId: game.sessionId });
-    set({ activeGame: null });
+    localStorage.removeItem('activeGameSessionId');
+    set({ activeGame: null, roomRecovery: false });
   },
 
   requestDashboard: () => {
@@ -63,7 +66,9 @@ export const useGameStore = create((set, get) => ({
     socket.emit('game:dashboard:request');
   },
 
-  closeGame: () => set({ activeGame: null }),
+  closeGame: () => set({ activeGame: null, roomRecovery: false }),
+
+  dismissRoomRecovery: () => set({ roomRecovery: false }),
 
   subscribeGameEvents: () => {
     const socket = useAuthStore.getState().socket;
@@ -76,18 +81,46 @@ export const useGameStore = create((set, get) => ({
     socket.off('game:error');
     socket.off('game:invite:declined');
     socket.off('game:invite:sent');
+    socket.off('game:invite:missed');
+    socket.off('game:resume-required');
 
     socket.on('game:invite', (invite) => set({ pendingInvite: invite }));
-    socket.on('game:state', (state) => set({ activeGame: state }));
+    socket.on('game:state', (state) => {
+      if (state?.sessionId) {
+        localStorage.setItem('activeGameSessionId', state.sessionId);
+      }
+      set({ activeGame: state });
+    });
 
     socket.on('game:invite:sent', ({ gameType }) => {
       toast.success(`${String(gameType || 'Game').toUpperCase()} invite sent`);
     });
 
+    socket.on('game:resume-required', (state) => {
+      if (state?.sessionId) {
+        localStorage.setItem('activeGameSessionId', state.sessionId);
+      }
+      set({ activeGame: state, roomRecovery: true });
+    });
+
+    socket.on('game:invite:missed', (payload) => {
+      set((state) => ({
+        missedGameCalls: [{
+          id: payload.id || `${Date.now()}`,
+          gameType: payload.gameType,
+          fromUserId: payload.fromUserId,
+          fromName: payload.fromName || 'Player',
+          createdAt: payload.createdAt || Date.now(),
+        }, ...state.missedGameCalls].slice(0, 20),
+      }));
+      toast(`Missed ${String(payload.gameType || 'game').toUpperCase()} call from ${payload.fromName || 'Player'}`);
+    });
+
     socket.on('game:ended', ({ winnerId }) => {
       const me = useAuthStore.getState().authUser?._id;
       toast.success(winnerId === me ? 'You won 🎉' : 'Game over. Good match!');
-      set({ activeGame: null });
+      localStorage.removeItem('activeGameSessionId');
+      set({ activeGame: null, roomRecovery: false });
       get().requestDashboard();
     });
 
