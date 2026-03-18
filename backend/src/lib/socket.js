@@ -284,7 +284,7 @@ io.on('connection', async (socket) => {
     }
   });
 
-  socket.on('call:start', ({ toUserId }) => {
+  socket.on('call:start', ({ toUserId, media }) => {
     if (!toUserId || toUserId === userId) return;
     const receiverSocketId = getReceiverSocketId(toUserId);
     if (!receiverSocketId) {
@@ -293,6 +293,7 @@ io.on('connection', async (socket) => {
     }
 
     io.to(receiverSocketId).emit('call:incoming', {
+      media: media || { video: true },
       fromUserId: userId,
       fromUser: {
         _id: userId,
@@ -302,10 +303,10 @@ io.on('connection', async (socket) => {
     });
   });
 
-  socket.on('call:accept', ({ toUserId }) => {
+  socket.on('call:accept', ({ toUserId, media }) => {
     const receiverSocketId = getReceiverSocketId(toUserId);
     if (receiverSocketId) {
-      io.to(receiverSocketId).emit('call:accepted', { fromUserId: userId });
+      io.to(receiverSocketId).emit('call:accepted', { fromUserId: userId, media: media || { video: true } });
     }
   });
 

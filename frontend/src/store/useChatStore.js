@@ -33,6 +33,12 @@ const updateChatWithLastMessage = (chats, message) => {
   );
 };
 
+
+const syncChatAfterDeletion = (chats, chatUserId, lastMessage) =>
+  sortChats(
+    chats.map((chat) => (chat._id === chatUserId ? { ...chat, lastMessage: lastMessage || null, unreadCount: lastMessage ? chat.unreadCount : 0 } : chat)),
+  );
+
 let typingTimeout = null;
 
 export const useChatStore = create((set, get) => ({
@@ -204,13 +210,13 @@ export const useChatStore = create((set, get) => ({
     const res = await api.post(`/message/react/${messageId}`, { emoji });
     set({ messages: get().messages.map((m) => m._id === messageId ? { ...m, reactions: res.data.reactions } : m) });
   },
-  deleteMessageForMe: async (messageId) => { await api.delete(`/message/delete-for-me/${messageId}`); set({ messages: get().messages.filter((m) => m._id !== messageId), selectedMessages: get().selectedMessages.filter((id) => id !== messageId) }); },
-  deleteMessageForEveryone: async (messageId) => { await api.delete(`/message/delete-for-everyone/${messageId}`); set({ messages: get().messages.filter((m) => m._id !== messageId), selectedMessages: get().selectedMessages.filter((id) => id !== messageId) }); },
+  deleteMessageForMe: async (messageId) => { const res = await api.delete(`/message/delete-for-me/${messageId}`); set({ messages: get().messages.filter((m) => m._id !== messageId), selectedMessages: get().selectedMessages.filter((id) => id !== messageId), chats: syncChatAfterDeletion(get().chats, res.data.chatUserId, res.data.lastMessage) }); },
+  deleteMessageForEveryone: async (messageId) => { const res = await api.delete(`/message/delete-for-everyone/${messageId}`); set({ messages: get().messages.filter((m) => m._id !== messageId), selectedMessages: get().selectedMessages.filter((id) => id !== messageId), chats: syncChatAfterDeletion(get().chats, res.data.chatUserId, res.data.lastMessage) }); },
 
   forwardSelectedMessages: async (targetUserId) => {
     const selected = get().messages.filter((m) => get().selectedMessages.includes(m._id));
     for (const msg of selected) {
-      await get().sendMessage({ text: msg.text, image: msg.image, video: msg.video, audio: msg.audio, document: msg.document, sharedContactId: msg.sharedContactId?._id || msg.sharedContactId }, targetUserId);
+      await get().sendMessage({ text: msg.text, image: msg.image, video: msg.video, audio: msg.audio, document: msg.document, sharedContactId: msg.sharedContactId?._id || msg.sharedContactId, location: msg.location }, targetUserId);
     }
     set({ selectedMessages: [], showForwardModal: false });
     toast.success('Message forwarded');
@@ -247,6 +253,7 @@ export const useChatStore = create((set, get) => ({
     socket.off('friend:request:received');
     socket.off('friend:request:responded');
     socket.off('chat:last-message');
+    socket.off('message:deleted-everyone');
 
     socket.on('newMessage', async (message) => {
       const selectedUser = get().selectedUser;
@@ -282,6 +289,13 @@ export const useChatStore = create((set, get) => ({
     socket.on('chat:last-message', (message) => {
       set({ chats: updateChatWithLastMessage(get().chats, message) });
     });
+    socket.on('message:deleted-everyone', ({ messageId, chatUserId, lastMessage }) => {
+      set({
+        messages: get().messages.filter((m) => m._id !== messageId),
+        selectedMessages: get().selectedMessages.filter((id) => id !== messageId),
+        chats: syncChatAfterDeletion(get().chats, chatUserId, lastMessage),
+      });
+    });
   },
   unsubscribeFromNewMessages: () => {
     const socket = useAuthStore.getState().socket;
@@ -292,6 +306,7 @@ export const useChatStore = create((set, get) => ({
     socket?.off('friend:request:received');
     socket?.off('friend:request:responded');
     socket?.off('chat:last-message');
+    socket?.off('message:deleted-everyone');
   },
 
   blockUser: async (userId) => { await api.post(`/message/block/${userId}`); toast.success('User blocked'); },

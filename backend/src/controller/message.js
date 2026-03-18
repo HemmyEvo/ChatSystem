@@ -134,7 +134,7 @@ export const messageController = {
         });
 
         const populatedAcceptanceMessage = await Message.findById(acceptanceMessage._id)
-          .populate('replyTo', 'text image video audio document senderId createdAt')
+          .populate('replyTo', 'text image video audio document location senderId createdAt')
           .populate('sharedContactId', 'username profilePicture email');
 
         const mySocketId = getReceiverSocketId(myId);
@@ -255,7 +255,7 @@ export const messageController = {
           visibleFilter(myId),
         ],
       })
-        .populate('replyTo', 'text image video audio document senderId createdAt')
+        .populate('replyTo', 'text image video audio document location senderId createdAt')
         .populate('sharedContactId', 'username profilePicture email')
         .sort({ createdAt: 1 });
 
@@ -268,11 +268,11 @@ export const messageController = {
 
   sendMessage: async (req, res) => {
     try {
-      const { text, image, video, audio, document, sharedContactId, replyTo } = req.body;
+      const { text, image, video, audio, document, sharedContactId, replyTo, location } = req.body;
       const senderId = req.user._id;
       const { id: receiverId } = req.params;
 
-      if (!text && !image && !video && !audio && !document && !sharedContactId) {
+      if (!text && !image && !video && !audio && !document && !sharedContactId && !location) {
         return res.status(400).json({ message: "Message content is required" });
       }
 
@@ -306,11 +306,12 @@ export const messageController = {
         audio: audioUrl,
         document: documentUrl,
         sharedContactId,
+        location,
         replyTo,
       });
 
       await newMessage.save();
-      await newMessage.populate('replyTo', 'text image video audio document senderId createdAt');
+      await newMessage.populate('replyTo', 'text image video audio document location senderId createdAt');
       if (sharedContactId) await newMessage.populate('sharedContactId', 'username profilePicture email');
 
       const receiverSocketId = getReceiverSocketId(receiverId);
@@ -413,8 +414,38 @@ export const messageController = {
     try {
       const myId = req.user._id;
       const { id: messageId } = req.params;
-      await Message.findByIdAndUpdate(messageId, { $addToSet: { deletedFor: myId } });
-      return res.status(200).json({ message: 'Message deleted for you' });
+      const message = await Message.findOneAndUpdate(
+        {
+          _id: messageId,
+          $or: [{ senderId: myId }, { receiverId: myId }],
+          deletedFor: { $ne: myId },
+        },
+        { $addToSet: { deletedFor: myId } },
+        { new: true },
+      );
+
+      if (!message) return res.status(404).json({ message: 'Message not found' });
+
+      const chatUserId = message.senderId.toString() === myId.toString()
+        ? message.receiverId.toString()
+        : message.senderId.toString();
+
+      const lastVisibleMessage = await Message.findOne({
+        $and: [
+          {
+            $or: [
+              { senderId: myId, receiverId: chatUserId },
+              { senderId: chatUserId, receiverId: myId },
+            ],
+          },
+          visibleFilter(myId),
+        ],
+      })
+        .sort({ createdAt: -1 })
+        .populate('replyTo', 'text image video audio document location senderId createdAt')
+        .populate('sharedContactId', 'username profilePicture email');
+
+      return res.status(200).json({ message: 'Message deleted for you', chatUserId, lastMessage: lastVisibleMessage });
     } catch (error) {
       console.error('Error deleting message for me:', error);
       return res.status(500).json({ message: 'Server error' });
@@ -427,8 +458,52 @@ export const messageController = {
       const { id: messageId } = req.params;
       const message = await Message.findOne({ _id: messageId, senderId: myId });
       if (!message) return res.status(404).json({ message: 'Message not found or not your message' });
+
+      const chatUserId = message.receiverId.toString();
       await Message.findByIdAndDelete(messageId);
-      return res.status(200).json({ message: 'Message deleted for everyone' });
+
+      const [senderLastMessage, receiverLastMessage] = await Promise.all([
+        Message.findOne({
+          $and: [
+            {
+              $or: [
+                { senderId: myId, receiverId: chatUserId },
+                { senderId: chatUserId, receiverId: myId },
+              ],
+            },
+            visibleFilter(myId),
+          ],
+        })
+          .sort({ createdAt: -1 })
+          .populate('replyTo', 'text image video audio document location senderId createdAt')
+          .populate('sharedContactId', 'username profilePicture email'),
+        Message.findOne({
+          $and: [
+            {
+              $or: [
+                { senderId: myId, receiverId: chatUserId },
+                { senderId: chatUserId, receiverId: myId },
+              ],
+            },
+            visibleFilter(chatUserId),
+          ],
+        })
+          .sort({ createdAt: -1 })
+          .populate('replyTo', 'text image video audio document location senderId createdAt')
+          .populate('sharedContactId', 'username profilePicture email'),
+      ]);
+
+      const receiverSocketId = getReceiverSocketId(chatUserId);
+      if (receiverSocketId) {
+        io.to(receiverSocketId).emit('message:deleted-everyone', { messageId, chatUserId: myId.toString(), lastMessage: receiverLastMessage });
+      }
+
+      const senderSocketId = getReceiverSocketId(myId.toString());
+      if (senderSocketId) {
+        io.to(senderSocketId).emit('message:deleted-everyone', { messageId, chatUserId, lastMessage: senderLastMessage });
+      }
+
+      return res.status(200).json({ message: 'Message deleted for everyone', chatUserId, lastMessage: senderLastMessage });
     } catch (error) {
       console.error('Error deleting message for everyone:', error);
       return res.status(500).json({ message: 'Server error' });
