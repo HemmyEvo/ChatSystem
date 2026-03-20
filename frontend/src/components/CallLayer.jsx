@@ -160,7 +160,7 @@ const CallBackdrop = ({ avatar }) => (
   </>
 );
 
-const RoundControl = ({ onClick, icon, label, tone = 'default' }) => {
+const RoundControl = ({ onClick, icon, label, tone = 'default', size = 'md' }) => {
   const toneClass =
     tone === 'danger'
       ? 'bg-[#e53935] text-white'
@@ -170,15 +170,23 @@ const RoundControl = ({ onClick, icon, label, tone = 'default' }) => {
           ? 'bg-white text-[#111b21]'
           : 'bg-white/16 text-white';
 
+  const sizeClass = size === 'lg' ? 'h-16 w-16' : 'h-14 w-14';
+
   return (
     <button type="button" onClick={onClick} className="flex min-w-[70px] flex-col items-center gap-2 text-white">
-      <span className={`flex h-14 w-14 items-center justify-center rounded-full shadow-lg backdrop-blur-md transition hover:scale-[1.03] ${toneClass}`}>
+      <span className={`flex ${sizeClass} items-center justify-center rounded-full shadow-lg backdrop-blur-md transition hover:scale-[1.03] ${toneClass}`}>
         {icon}
       </span>
       <span className="text-[11px] font-medium text-white/88">{label}</span>
     </button>
   );
 };
+
+const UtilityChip = ({ children }) => (
+  <div className="inline-flex items-center gap-2 rounded-full bg-black/32 px-3 py-1.5 text-xs text-white/88 backdrop-blur-md">
+    {children}
+  </div>
+);
 
 function MissedCallsPanel({ missedCalls, clearMissedCalls }) {
   if (!missedCalls.length) return null;
@@ -230,13 +238,13 @@ function IncomingCallView({ incomingCall, acceptCall, declineCall }) {
       <CallBackdrop avatar={avatar} />
       <div className="relative flex min-h-[100dvh] flex-col items-center justify-between px-6 pb-10 pt-12 text-center">
         <div className="w-full">
-          <div className="text-sm font-medium text-white/78">WhatsApp {isVideoCall ? 'video' : 'voice'} call</div>
+          <div className="text-sm font-medium text-white/72">Incoming {isVideoCall ? 'video' : 'voice'} call</div>
         </div>
 
         <div className="flex flex-col items-center">
           <img src={avatar} alt={username} className="h-32 w-32 rounded-full object-cover shadow-2xl ring-1 ring-white/10" />
-          <h2 className="mt-6 text-[2rem] font-medium leading-none">{username}</h2>
-          <p className="mt-3 text-sm text-white/75">Incoming {isVideoCall ? 'video' : 'voice'} call</p>
+          <h2 className="mt-6 text-[2.2rem] font-normal leading-none">{username}</h2>
+          <p className="mt-3 text-sm text-white/72">{isVideoCall ? 'Video call' : 'Voice call'}</p>
         </div>
 
         <div className="flex items-end justify-center gap-10">
@@ -270,13 +278,13 @@ function VoiceCallView({ activeCallUser, remoteStream, callStatus, isMuted, acce
       <CallBackdrop avatar={avatar} />
       <div className="relative flex min-h-[100dvh] flex-col items-center justify-between px-6 pb-10 pt-12 text-center">
         <div className="w-full">
-          <div className="text-sm font-medium text-white/78">End-to-end encrypted</div>
+          <div className="text-sm font-medium text-white/72">End-to-end encrypted</div>
         </div>
 
         <div className="flex flex-col items-center">
           <img src={avatar} alt={username} className="h-36 w-36 rounded-full object-cover shadow-2xl ring-1 ring-white/10" />
-          <h2 className="mt-7 text-[2.35rem] font-medium leading-none">{username}</h2>
-          <p className="mt-3 text-base text-white/75">{status}</p>
+          <h2 className="mt-7 text-[2.45rem] font-normal leading-none">{username}</h2>
+          <p className="mt-3 text-base text-white/72">{status}</p>
         </div>
 
         {incomingCall ? (
@@ -285,14 +293,14 @@ function VoiceCallView({ activeCallUser, remoteStream, callStatus, isMuted, acce
             <RoundControl onClick={acceptCall} icon={<Phone size={22} />} label="Accept" tone="accept" />
           </div>
         ) : (
-          <div className="flex flex-wrap items-start justify-center gap-8">
+          <div className="flex flex-wrap items-start justify-center gap-10">
             <RoundControl
               onClick={toggleMute}
               icon={isMuted ? <MicOff size={22} /> : <Mic size={22} />}
               label={isMuted ? 'Unmute' : 'Mute'}
               tone={isMuted ? 'active' : 'default'}
             />
-            <RoundControl onClick={endCall} icon={<PhoneOff size={22} />} label="End" tone="danger" />
+            <RoundControl onClick={endCall} icon={<PhoneOff size={24} />} label="End" tone="danger" size="lg" />
           </div>
         )}
       </div>
@@ -371,8 +379,8 @@ function VideoCallView({
       <div className="relative flex min-h-[100dvh] flex-col justify-between px-4 pb-7 pt-4 sm:px-6 sm:pb-8">
         <div className="flex items-start justify-between gap-4">
           <div className="max-w-[70%]">
-            <div className="text-[1.7rem] font-medium leading-none drop-shadow-lg sm:text-[2rem]">{username}</div>
-            <div className="mt-2 text-sm text-white/78">{status}</div>
+            <div className="text-[1.65rem] font-normal leading-none drop-shadow-lg sm:text-[1.9rem]">{username}</div>
+            <div className="mt-2 text-sm text-white/74">{status}</div>
           </div>
 
           <div className="flex flex-col items-end gap-2">
@@ -387,39 +395,38 @@ function VideoCallView({
                 rounded="rounded-none"
               />
             </div>
-
-            {remoteLocation && (
-              <a
-                href={`https://www.google.com/maps?q=${remoteLocation.lat},${remoteLocation.lng}`}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-full bg-black/35 px-3 py-1 text-xs text-white/85 backdrop-blur-md"
-              >
-                Open location
-              </a>
-            )}
           </div>
         </div>
 
         <div className="flex flex-col items-center gap-4">
           <div className="flex flex-wrap items-center justify-center gap-2">
             {isRecording && (
-              <div className="inline-flex items-center gap-2 rounded-full bg-[#e53935] px-3 py-1 text-xs font-semibold">
+              <UtilityChip>
                 <CircleDot size={12} /> Recording {formatDuration(recordingSeconds)}
-              </div>
+              </UtilityChip>
             )}
             {remoteMediaState.isRecording && (
-              <div className="inline-flex items-center gap-2 rounded-full bg-white/18 px-3 py-1 text-xs font-medium backdrop-blur-md">
+              <UtilityChip>
                 <CircleDot size={12} /> They are recording
-              </div>
+              </UtilityChip>
             )}
             {recordingUrl && (
               <a
                 href={recordingUrl}
                 download="call-recording.webm"
-                className="inline-flex items-center gap-2 rounded-full bg-white/18 px-3 py-1 text-xs font-medium backdrop-blur-md"
+                className="inline-flex items-center gap-2 rounded-full bg-black/32 px-3 py-1.5 text-xs text-white/88 backdrop-blur-md"
               >
                 <Download size={12} /> Download
+              </a>
+            )}
+            {remoteLocation && (
+              <a
+                href={`https://www.google.com/maps?q=${remoteLocation.lat},${remoteLocation.lng}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-full bg-black/32 px-3 py-1.5 text-xs text-white/88 backdrop-blur-md"
+              >
+                <MapPin size={12} /> Location
               </a>
             )}
           </div>
@@ -430,14 +437,46 @@ function VideoCallView({
               <RoundControl onClick={acceptCall} icon={<Video size={22} />} label="Accept" tone="accept" />
             </div>
           ) : (
-            <div className="w-full max-w-3xl rounded-[1.8rem] bg-black/28 px-4 py-4 backdrop-blur-xl">
-              <div className="flex flex-wrap items-start justify-center gap-x-6 gap-y-4 sm:gap-x-8">
-                <RoundControl
-                  onClick={toggleMute}
-                  icon={isMuted ? <MicOff size={22} /> : <Mic size={22} />}
-                  label={isMuted ? 'Unmute' : 'Mute'}
-                  tone={isMuted ? 'active' : 'default'}
-                />
+            <div className="w-full max-w-3xl space-y-3">
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={toggleScreenShare}
+                  className={`rounded-full px-3 py-1.5 text-xs transition ${isScreenSharing ? 'bg-white text-[#111b21]' : 'bg-black/32 text-white/85 backdrop-blur-md'}`}
+                >
+                  <span className="inline-flex items-center gap-1.5"><MonitorUp size={12} /> Screen</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAnnotating((value) => !value)}
+                  className={`rounded-full px-3 py-1.5 text-xs transition ${isAnnotating ? 'bg-white text-[#111b21]' : 'bg-black/32 text-white/85 backdrop-blur-md'}`}
+                >
+                  <span className="inline-flex items-center gap-1.5"><Eraser size={12} /> Draw</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleRecording}
+                  className={`rounded-full px-3 py-1.5 text-xs transition ${isRecording ? 'bg-white text-[#111b21]' : 'bg-black/32 text-white/85 backdrop-blur-md'}`}
+                >
+                  <span className="inline-flex items-center gap-1.5"><CircleDot size={12} /> Record</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={shareLocationInCall}
+                  className="rounded-full bg-black/32 px-3 py-1.5 text-xs text-white/85 backdrop-blur-md"
+                >
+                  <span className="inline-flex items-center gap-1.5"><MapPin size={12} /> Location</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={clearDrawings}
+                  className="rounded-full bg-black/32 px-3 py-1.5 text-xs text-white/85 backdrop-blur-md"
+                >
+                  <span className="inline-flex items-center gap-1.5"><Eraser size={12} /> Clear</span>
+                </button>
+              </div>
+
+              <div className="mx-auto flex max-w-xl items-start justify-center gap-8 rounded-[1.8rem] bg-black/28 px-5 py-4 backdrop-blur-xl">
                 <RoundControl
                   onClick={toggleCamera}
                   icon={isCameraEnabled ? <Camera size={22} /> : <CameraOff size={22} />}
@@ -445,26 +484,18 @@ function VideoCallView({
                   tone={!isCameraEnabled ? 'active' : 'default'}
                 />
                 <RoundControl
-                  onClick={toggleScreenShare}
-                  icon={<MonitorUp size={22} />}
-                  label="Screen"
-                  tone={isScreenSharing ? 'active' : 'default'}
+                  onClick={endCall}
+                  icon={<PhoneOff size={24} />}
+                  label="End"
+                  tone="danger"
+                  size="lg"
                 />
                 <RoundControl
-                  onClick={() => setIsAnnotating((value) => !value)}
-                  icon={<Eraser size={22} />}
-                  label={isAnnotating ? 'Drawing' : 'Draw'}
-                  tone={isAnnotating ? 'active' : 'default'}
+                  onClick={toggleMute}
+                  icon={isMuted ? <MicOff size={22} /> : <Mic size={22} />}
+                  label={isMuted ? 'Unmute' : 'Mute'}
+                  tone={isMuted ? 'active' : 'default'}
                 />
-                <RoundControl
-                  onClick={toggleRecording}
-                  icon={<CircleDot size={22} />}
-                  label={isRecording ? 'Stop rec' : 'Record'}
-                  tone={isRecording ? 'active' : 'default'}
-                />
-                <RoundControl onClick={shareLocationInCall} icon={<MapPin size={22} />} label="Location" />
-                <RoundControl onClick={clearDrawings} icon={<Eraser size={22} />} label="Clear" />
-                <RoundControl onClick={endCall} icon={<PhoneOff size={22} />} label="End" tone="danger" />
               </div>
             </div>
           )}
