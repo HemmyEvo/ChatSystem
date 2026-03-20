@@ -7,6 +7,7 @@ import ContactList from '../components/ContactList.jsx';
 import ChatContainer from '../components/ChatContainer.jsx';
 import NoConversationPlacehoder from '../components/NoConversationPlacehoder.jsx';
 import GameLayer from '../components/GameLayer.jsx';
+import StatusPanel from '../components/StatusPanel.jsx';
 function ChatPage() {
   const {activeTab,selectedUser} = useChatStore();
  
@@ -19,7 +20,7 @@ function ChatPage() {
         <ProfileHeader />
         <ActiveTabSwitch />
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {activeTab === 'chats' ? <ChatsList /> : <ContactList />}
+          {activeTab === 'chats' ? <ChatsList /> : activeTab === 'updates' ? <StatusPanel /> : <ContactList />}
         </div>
       </div>
 

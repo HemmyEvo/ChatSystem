@@ -153,7 +153,9 @@ function ChatHeader() {
 
               <div className='flex flex-col items-start'>
                 <h4 className='text-slate-200 font-medium'>@{selectedUser?.username}</h4>
-                <p className='text-xs text-slate-400'>{online ? 'online' : `last seen today at ${formatLastSeen(lastSeen)}`}</p>
+                <p className='max-w-[180px] truncate text-xs text-slate-400'>
+                  {online ? 'online' : selectedUser?.bio || `last seen today at ${formatLastSeen(lastSeen)}`}
+                </p>
               </div>
             </div>
 

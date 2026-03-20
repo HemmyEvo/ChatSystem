@@ -1,10 +1,26 @@
 import mongoose from "mongoose";
 
+const statusItemSchema = new mongoose.Schema(
+  {
+    type: { type: String, enum: ['text', 'image', 'video'], default: 'text' },
+    text: { type: String, maxlength: 700, default: '' },
+    mediaUrl: { type: String, default: '' },
+    backgroundColor: { type: String, default: '#0b141a' },
+    textColor: { type: String, default: '#ffffff' },
+    viewers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    createdAt: { type: Date, default: Date.now },
+    expiresAt: { type: Date, required: true },
+  },
+  { _id: true },
+);
+
 const userSchema = new mongoose.Schema({
     username: { type: String, required: true, unique: true, trim: true, lowercase: true },
     password: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     profilePicture: { type: String, default: '' },
+    bio: { type: String, maxlength: 139, default: 'Hey there! I am using WhatsApp.' },
+    statusItems: [statusItemSchema],
     lastSeen: { type: Date, default: Date.now },
     blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     friends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],

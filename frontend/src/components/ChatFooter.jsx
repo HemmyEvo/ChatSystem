@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useChatStore } from '../store/useChatStore';
-import { Paperclip, Send, Mic, Video, User, X, Image as ImageIcon, Trash2, Square, Search, MapPin } from 'lucide-react';
+import { Paperclip, Send, Mic, Video, User, X, Image as ImageIcon, Trash2, Square, Search, MapPin, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const messageSendSound = new Audio('/sounds/send.mp3');
@@ -17,6 +17,7 @@ function ChatFooter() {
   const [audioUrl, setAudioUrl] = useState(null);
   const [recordingTime, setRecordingTime] = useState(0);
   const [isSharingLocation, setIsSharingLocation] = useState(false);
+  const [viewOnce, setViewOnce] = useState(false);
 
   const fileInputRef = useRef(null);
   const videoInputRef = useRef(null);
@@ -57,11 +58,12 @@ function ChatFooter() {
       const payload = {};
       if (text.trim()) payload.text = text.trim();
       if (previewMedia) payload[previewMedia.type] = await convertToBase64(previewMedia.file);
+      if (previewMedia && viewOnce && ['image', 'video'].includes(previewMedia.type)) payload.viewOnce = true;
       if (audioBlob) payload.audio = await convertToBase64(audioBlob);
       setText('');
       emitStopTypingEvent();
       if (textareaRef.current) textareaRef.current.style.height = 'auto';
-      setPreviewMedia(null); discardAudio(); playSound(messageSendSound); await sendMessage(payload);
+      setPreviewMedia(null); setViewOnce(false); discardAudio(); playSound(messageSendSound); await sendMessage(payload);
     } catch (error) { console.error('Error sending message:', error); toast.error(error.response?.data?.message || 'Failed to send message'); }
   };
 
@@ -75,7 +77,7 @@ function ChatFooter() {
     const file = e.target.files[0];
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) { toast.error(`The selected ${type} exceeds the 5MB limit.`); e.target.value = null; return; }
-    setPreviewMedia({ file, url: URL.createObjectURL(file), type }); setShowAttachMenu(false); e.target.value = null;
+    setPreviewMedia({ file, url: URL.createObjectURL(file), type }); setViewOnce(false); setShowAttachMenu(false); e.target.value = null;
   };
 
   const handleShareLocation = async () => {
@@ -116,7 +118,37 @@ function ChatFooter() {
 
   return (
     <div className='bg-slate-800 p-3 sm:p-4 relative w-full box-border'>
-      {previewMedia && <div className="absolute bottom-full left-0 w-full bg-slate-800 border-t border-slate-700 p-4 shadow-lg z-40 flex flex-col gap-4"><div className="flex justify-between items-center text-white mb-2"><h3 className="font-semibold capitalize">Send {previewMedia.type}</h3><button onClick={() => setPreviewMedia(null)} className="p-1 hover:bg-slate-700 rounded-full"><X size={20} /></button></div><div className="flex-1 flex items-center justify-center bg-slate-900 rounded-lg overflow-hidden min-h-[200px] max-h-[40vh]">{previewMedia.type === 'image' && <img src={previewMedia.url} alt="Preview" className="max-h-full max-w-full object-contain" />}{previewMedia.type === 'video' && <video src={previewMedia.url} controls className="max-h-full max-w-full" />}</div></div>}
+      {previewMedia && (
+        <div className="absolute bottom-full left-0 w-full border-t border-[#2a3942] bg-[#111b21] p-4 shadow-lg z-40 flex flex-col gap-4">
+          <div className="mb-2 flex items-center justify-between text-white">
+            <h3 className="font-semibold capitalize">Send {previewMedia.type}</h3>
+            <button onClick={() => { setPreviewMedia(null); setViewOnce(false); }} className="rounded-full p-1 hover:bg-white/10">
+              <X size={20} />
+            </button>
+          </div>
+
+          <div className="flex-1 flex items-center justify-center overflow-hidden rounded-[1.2rem] bg-black min-h-[200px] max-h-[40vh]">
+            {previewMedia.type === 'image' && <img src={previewMedia.url} alt="Preview" className="max-h-full max-w-full object-contain" />}
+            {previewMedia.type === 'video' && <video src={previewMedia.url} controls className="max-h-full max-w-full" />}
+          </div>
+
+          {['image', 'video'].includes(previewMedia.type) && (
+            <div className="flex items-center justify-between rounded-[1rem] bg-[#202c33] px-4 py-3 text-white">
+              <div>
+                <div className="text-sm font-medium">View once</div>
+                <div className="text-xs text-white/55">Recipient can open this media only one time</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewOnce((value) => !value)}
+                className={`flex h-11 w-11 items-center justify-center rounded-full border transition ${viewOnce ? 'border-[#25d366] bg-[#25d366] text-[#111b21]' : 'border-white/10 bg-white/5 text-white/80'}`}
+              >
+                <EyeOff size={18} />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {replyTarget && <div className='mb-2 w-full flex items-start justify-between bg-slate-700/70 border-l-4 border-emerald-400 rounded-md px-3 py-2 box-border overflow-hidden'><div className='flex-1 min-w-0 flex flex-col pr-2'><span className='text-emerald-300 text-xs mb-1 font-semibold truncate'>Replying to message</span><span className='text-slate-200 text-[13px] opacity-90 line-clamp-3 break-words' style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{replyTarget.text || (replyTarget.location ? 'Shared location' : 'Media message')}</span></div><button onClick={() => setReplyTarget(null)} type='button' className='flex-shrink-0 mt-0.5 p-1 hover:bg-slate-600 rounded-full transition-colors'><X size={16} /></button></div>}
 

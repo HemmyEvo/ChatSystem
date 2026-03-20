@@ -7,6 +7,12 @@ import { useAuthStore } from "../store/useAuthStore.js";
 
 const getLastMessagePreview = (message) => {
   if (!message) return "No messages yet";
+  if (message.viewOnce) {
+    if (message.viewOnceOpened || message.viewOnceOpenedByPeer) return "Opened view once media";
+    if (message.image) return "View once photo";
+    if (message.video) return "View once video";
+    return "View once media";
+  }
   if (message.text) return message.text;
   if (message.audio) return "Voice message";
   if (message.image) return "Photo";

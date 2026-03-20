@@ -28,11 +28,70 @@ const canInteract = async (senderId, receiverId) => {
 
 const visibleFilter = (myId) => ({ deletedFor: { $ne: myId } });
 
+const STATUS_LIFETIME_MS = 24 * 60 * 60 * 1000;
+
+const getIdString = (value) => {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object' && value._id) return value._id.toString();
+  return value.toString();
+};
+
+const getActiveStatusItems = (statusItems = []) =>
+  statusItems
+    .filter((item) => new Date(item.expiresAt).getTime() > Date.now())
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+const serializeStatusUser = (user, viewerId) => {
+  const viewerIdStr = getIdString(viewerId);
+  const activeStatuses = getActiveStatusItems(user.statusItems).map((status) => ({
+    _id: status._id,
+    type: status.type,
+    text: status.text,
+    mediaUrl: status.mediaUrl,
+    backgroundColor: status.backgroundColor,
+    textColor: status.textColor,
+    createdAt: status.createdAt,
+    expiresAt: status.expiresAt,
+    viewersCount: status.viewers?.length || 0,
+    seen: (status.viewers || []).some((viewer) => getIdString(viewer) === viewerIdStr),
+  }));
+
+  return {
+    _id: user._id,
+    username: user.username,
+    profilePicture: user.profilePicture,
+    bio: user.bio,
+    statuses: activeStatuses,
+    hasUnseen: activeStatuses.some((status) => !status.seen),
+  };
+};
+
+const serializeMessageForViewer = (message, viewerId) => {
+  const plain = typeof message.toObject === 'function' ? message.toObject() : { ...message };
+  const viewerIdStr = getIdString(viewerId);
+  const senderId = getIdString(plain.senderId);
+  const receiverId = getIdString(plain.receiverId);
+  const isSender = viewerIdStr === senderId;
+  const hasBeenViewed = (plain.viewedBy || []).some((entry) => getIdString(entry) === receiverId);
+  const isLockedForViewer = Boolean(plain.viewOnce && !isSender && hasBeenViewed);
+
+  return {
+    ...plain,
+    viewOnceOpened: Boolean(plain.viewOnce && !isSender && hasBeenViewed),
+    viewOnceOpenedByPeer: Boolean(plain.viewOnce && isSender && hasBeenViewed),
+    canOpenViewOnce: Boolean(plain.viewOnce && !isSender && !hasBeenViewed),
+    image: isLockedForViewer ? null : plain.image,
+    video: isLockedForViewer ? null : plain.video,
+  };
+};
+
 const mapRelationship = (viewer, user) => ({
   _id: user._id,
   username: user.username,
   email: user.email,
   profilePicture: user.profilePicture,
+  bio: user.bio,
   lastSeen: user.lastSeen,
   isFriend: viewer.friends.some((id) => id.toString() === user._id.toString()),
   requestSent: viewer.friendRequestsSent.some((id) => id.toString() === user._id.toString()),
@@ -60,7 +119,7 @@ export const messageController = {
   friendList: async (req, res) => {
     try {
       const loggedInUser = await User.findById(req.user._id)
-        .populate('friends', 'username email profilePicture lastSeen')
+        .populate('friends', 'username email profilePicture bio lastSeen')
         .select('friends');
       return res.status(200).json({ friends: loggedInUser?.friends || [] });
     } catch (error) {
@@ -228,8 +287,11 @@ export const messageController = {
           username: partner.username,
           email: partner.email,
           profilePicture: partner.profilePicture,
+          bio: partner.bio,
           lastSeen: partner.lastSeen,
-          lastMessage: lastMessageByPartner[partner._id.toString()] || null,
+          lastMessage: lastMessageByPartner[partner._id.toString()]
+            ? serializeMessageForViewer(lastMessageByPartner[partner._id.toString()], loggedInUserId)
+            : null,
           unreadCount: unreadMap[partner._id.toString()] || 0,
         })),
       });
@@ -259,7 +321,7 @@ export const messageController = {
         .populate('sharedContactId', 'username profilePicture email')
         .sort({ createdAt: 1 });
 
-      return res.status(200).json({ messages });
+      return res.status(200).json({ messages: messages.map((message) => serializeMessageForViewer(message, myId)) });
     } catch (error) {
       console.error('Error fetching messages:', error);
       return res.status(500).json({ message: "Server error" });
@@ -268,12 +330,16 @@ export const messageController = {
 
   sendMessage: async (req, res) => {
     try {
-      const { text, image, video, audio, document, sharedContactId, replyTo, location } = req.body;
+      const { text, image, video, audio, document, sharedContactId, replyTo, location, viewOnce } = req.body;
       const senderId = req.user._id;
       const { id: receiverId } = req.params;
 
       if (!text && !image && !video && !audio && !document && !sharedContactId && !location) {
         return res.status(400).json({ message: "Message content is required" });
+      }
+
+      if (viewOnce && !(image || video)) {
+        return res.status(400).json({ message: 'View once is only available for photos and videos' });
       }
 
       const interactionCheck = await canInteract(senderId, receiverId);
@@ -305,6 +371,7 @@ export const messageController = {
         video: videoUrl,
         audio: audioUrl,
         document: documentUrl,
+        viewOnce: Boolean(viewOnce),
         sharedContactId,
         location,
         replyTo,
@@ -315,13 +382,16 @@ export const messageController = {
       if (sharedContactId) await newMessage.populate('sharedContactId', 'username profilePicture email');
 
       const receiverSocketId = getReceiverSocketId(receiverId);
-      if (receiverSocketId) io.to(receiverSocketId).emit('newMessage', newMessage);
+      const serializedForReceiver = serializeMessageForViewer(newMessage, receiverId);
+      const serializedForSender = serializeMessageForViewer(newMessage, senderId);
+
+      if (receiverSocketId) io.to(receiverSocketId).emit('newMessage', serializedForReceiver);
 
       const senderSocketId = getReceiverSocketId(senderId.toString());
-      if (senderSocketId) io.to(senderSocketId).emit('chat:last-message', newMessage);
-      if (receiverSocketId) io.to(receiverSocketId).emit('chat:last-message', newMessage);
+      if (senderSocketId) io.to(senderSocketId).emit('chat:last-message', serializedForSender);
+      if (receiverSocketId) io.to(receiverSocketId).emit('chat:last-message', serializedForReceiver);
 
-      return res.status(201).json({ message: 'Message sent successfully', data: newMessage });
+      return res.status(201).json({ message: 'Message sent successfully', data: serializedForSender });
     } catch (error) {
       console.error('Error sending message:', error);
       if (error.http_code === 413) {
@@ -351,6 +421,140 @@ export const messageController = {
       return res.status(200).json({ message: 'Reaction updated', reactions: message.reactions });
     } catch (error) {
       console.error('Error reacting to message:', error);
+      return res.status(500).json({ message: 'Server error' });
+    }
+  },
+
+  statuses: async (req, res) => {
+    try {
+      const myId = req.user._id;
+      const me = await User.findById(myId)
+        .populate('friends', 'username profilePicture bio statusItems')
+        .select('username profilePicture bio statusItems friends');
+
+      const usersWithStatuses = [me, ...(me?.friends || [])]
+        .filter(Boolean)
+        .map((user) => serializeStatusUser(user, myId))
+        .filter((user) => user.statuses.length > 0);
+
+      return res.status(200).json({ statuses: usersWithStatuses });
+    } catch (error) {
+      console.error('Error fetching statuses:', error);
+      return res.status(500).json({ message: 'Server error' });
+    }
+  },
+
+  postStatus: async (req, res) => {
+    try {
+      const userId = req.user._id;
+      const { text, image, video, backgroundColor, textColor } = req.body;
+
+      if (!text && !image && !video) {
+        return res.status(400).json({ message: 'Status content is required' });
+      }
+
+      let mediaUrl = '';
+      let type = 'text';
+
+      if (image || video) {
+        const uploaded = await cloudinary.uploader.upload(image || video, {
+          resource_type: 'auto',
+          folder: 'chat_statuses',
+        });
+        mediaUrl = uploaded.secure_url;
+        type = image ? 'image' : 'video';
+      }
+
+      const statusItem = {
+        type,
+        text: (text || '').trim(),
+        mediaUrl,
+        backgroundColor: backgroundColor || '#0b141a',
+        textColor: textColor || '#ffffff',
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + STATUS_LIFETIME_MS),
+        viewers: [],
+      };
+
+      const updatedUser = await User.findById(userId).select('username profilePicture bio statusItems');
+      updatedUser.statusItems = getActiveStatusItems(updatedUser.statusItems);
+      updatedUser.statusItems.push(statusItem);
+      updatedUser.statusItems = updatedUser.statusItems.slice(-30);
+      await updatedUser.save();
+
+      return res.status(201).json({ statusUser: serializeStatusUser(updatedUser, userId) });
+    } catch (error) {
+      console.error('Error posting status:', error);
+      return res.status(500).json({ message: 'Server error' });
+    }
+  },
+
+  viewStatus: async (req, res) => {
+    try {
+      const viewerId = req.user._id;
+      const { id: statusId } = req.params;
+      const owner = await User.findOne({ 'statusItems._id': statusId }).select('username profilePicture bio friends statusItems');
+      if (!owner) return res.status(404).json({ message: 'Status not found' });
+
+      const isOwner = owner._id.toString() === viewerId.toString();
+      const isFriend = owner.friends?.some((friendId) => friendId.toString() === viewerId.toString());
+      if (!isOwner && !isFriend) {
+        return res.status(403).json({ message: 'You can only view statuses from your contacts' });
+      }
+
+      if (!isOwner) {
+        await User.updateOne(
+          { _id: owner._id, 'statusItems._id': statusId },
+          { $addToSet: { 'statusItems.$.viewers': viewerId } },
+        );
+      }
+
+      const refreshedOwner = await User.findById(owner._id).select('username profilePicture bio statusItems');
+      return res.status(200).json({ statusUser: serializeStatusUser(refreshedOwner, viewerId) });
+    } catch (error) {
+      console.error('Error viewing status:', error);
+      return res.status(500).json({ message: 'Server error' });
+    }
+  },
+
+  openViewOnceMessage: async (req, res) => {
+    try {
+      const viewerId = req.user._id;
+      const { id: messageId } = req.params;
+      const message = await Message.findById(messageId)
+        .populate('replyTo', 'text image video audio document location senderId createdAt')
+        .populate('sharedContactId', 'username profilePicture email');
+
+      if (!message) return res.status(404).json({ message: 'Message not found' });
+
+      const isParticipant =
+        message.senderId.toString() === viewerId.toString() ||
+        message.receiverId.toString() === viewerId.toString();
+
+      if (!isParticipant) return res.status(403).json({ message: 'Unauthorized' });
+      if (!message.viewOnce) return res.status(400).json({ message: 'This message is not view once' });
+
+      const mediaUrl = message.image || message.video || '';
+      const mediaType = message.image ? 'image' : message.video ? 'video' : null;
+      const isSender = message.senderId.toString() === viewerId.toString();
+      const receiverAlreadyViewed = (message.viewedBy || []).some((entry) => entry.toString() === message.receiverId.toString());
+
+      if (!isSender && receiverAlreadyViewed) {
+        return res.status(410).json({ message: 'This view once media has already been opened' });
+      }
+
+      if (!isSender) {
+        message.viewedBy = Array.from(new Set([...(message.viewedBy || []).map((entry) => entry.toString()), viewerId.toString()]));
+        await message.save();
+      }
+
+      return res.status(200).json({
+        mediaUrl,
+        mediaType,
+        message: serializeMessageForViewer(message, viewerId),
+      });
+    } catch (error) {
+      console.error('Error opening view once message:', error);
       return res.status(500).json({ message: 'Server error' });
     }
   },
@@ -445,7 +649,11 @@ export const messageController = {
         .populate('replyTo', 'text image video audio document location senderId createdAt')
         .populate('sharedContactId', 'username profilePicture email');
 
-      return res.status(200).json({ message: 'Message deleted for you', chatUserId, lastMessage: lastVisibleMessage });
+      return res.status(200).json({
+        message: 'Message deleted for you',
+        chatUserId,
+        lastMessage: lastVisibleMessage ? serializeMessageForViewer(lastVisibleMessage, myId) : null,
+      });
     } catch (error) {
       console.error('Error deleting message for me:', error);
       return res.status(500).json({ message: 'Server error' });
@@ -495,15 +703,27 @@ export const messageController = {
 
       const receiverSocketId = getReceiverSocketId(chatUserId);
       if (receiverSocketId) {
-        io.to(receiverSocketId).emit('message:deleted-everyone', { messageId, chatUserId: myId.toString(), lastMessage: receiverLastMessage });
+        io.to(receiverSocketId).emit('message:deleted-everyone', {
+          messageId,
+          chatUserId: myId.toString(),
+          lastMessage: receiverLastMessage ? serializeMessageForViewer(receiverLastMessage, chatUserId) : null,
+        });
       }
 
       const senderSocketId = getReceiverSocketId(myId.toString());
       if (senderSocketId) {
-        io.to(senderSocketId).emit('message:deleted-everyone', { messageId, chatUserId, lastMessage: senderLastMessage });
+        io.to(senderSocketId).emit('message:deleted-everyone', {
+          messageId,
+          chatUserId,
+          lastMessage: senderLastMessage ? serializeMessageForViewer(senderLastMessage, myId) : null,
+        });
       }
 
-      return res.status(200).json({ message: 'Message deleted for everyone', chatUserId, lastMessage: senderLastMessage });
+      return res.status(200).json({
+        message: 'Message deleted for everyone',
+        chatUserId,
+        lastMessage: senderLastMessage ? serializeMessageForViewer(senderLastMessage, myId) : null,
+      });
     } catch (error) {
       console.error('Error deleting message for everyone:', error);
       return res.status(500).json({ message: 'Server error' });

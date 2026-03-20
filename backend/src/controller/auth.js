@@ -44,6 +44,8 @@ const sanitizeUser = (user) => ({
   username: user.username,
   email: user.email,
   profilePicture: user.profilePicture,
+  bio: user.bio,
+  statusItems: user.statusItems,
   friends: user.friends,
   friendRequestsSent: user.friendRequestsSent,
   friendRequestsReceived: user.friendRequestsReceived,
@@ -171,22 +173,35 @@ export const authController = {
 
     updateProfile:async (req, res) => {
         try {
-            const { profilePic } = req.body;
-            if (!profilePic) return res.status(400).json({ message: 'Profile picture is required' });
+            const { profilePic, bio } = req.body;
             const userId = req.user._id;
-           const uploadResult = await cloudinary.uploader.upload(profilePic);
-          
+
+            const updates = {};
+
+            if (typeof bio === 'string') {
+              updates.bio = bio.trim().slice(0, 139);
+            }
+
+            if (profilePic) {
+              const uploadResult = await cloudinary.uploader.upload(profilePic);
+              updates.profilePicture = uploadResult.secure_url;
+            }
+
+            if (!Object.keys(updates).length) {
+              return res.status(400).json({ message: 'Profile picture or bio is required' });
+            }
+
             const updatedUser = await User.findByIdAndUpdate(
                 userId,
-                { profilePicture: uploadResult.secure_url },
+                updates,
                 { new: true }
             ).select('-password');
 
            return res.status(200).json({ message: 'Profile updated successfully', data: updatedUser });
 
         } catch (error) {
-            console.error('Error uploading profile picture:', error);
-            return res.status(500).json({ message: 'Error uploading profile picture' });
+            console.error('Error updating profile:', error);
+            return res.status(500).json({ message: 'Error updating profile' });
         }
     }, 
     getUserInfo: async (req, res) => {

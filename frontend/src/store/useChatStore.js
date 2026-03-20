@@ -74,9 +74,11 @@ export const useChatStore = create((set, get) => ({
   chats: [],
   messages: [],
   activeTab: "chats",
+  statuses: [],
   selectedUser: null,
   isUsersLoading: false,
   isMessagesLoading: false,
+  isStatusesLoading: false,
   searchTerm: "",
   peopleSearchTerm: "",
   shareContactSearchTerm: "",
@@ -172,6 +174,34 @@ export const useChatStore = create((set, get) => ({
     set({ friends: res.data.friends });
     return res.data.friends;
   },
+  getStatuses: async () => {
+    set({ isStatusesLoading: true });
+    try {
+      const res = await api.get('/message/statuses');
+      set({ statuses: res.data.statuses || [] });
+      return res.data.statuses || [];
+    } finally {
+      set({ isStatusesLoading: false });
+    }
+  },
+  postStatus: async (payload) => {
+    const res = await api.post('/message/status', payload);
+    const nextStatusUser = res.data.statusUser;
+    set((state) => ({
+      statuses: [nextStatusUser, ...state.statuses.filter((entry) => entry._id !== nextStatusUser._id)],
+      activeTab: 'updates',
+    }));
+    toast.success('Status posted');
+    return nextStatusUser;
+  },
+  markStatusViewed: async (statusId) => {
+    const res = await api.post(`/message/status/${statusId}/view`);
+    const updatedUser = res.data.statusUser;
+    set((state) => ({
+      statuses: state.statuses.map((entry) => (entry._id === updatedUser._id ? updatedUser : entry)),
+    }));
+    return updatedUser;
+  },
   sendFriendRequest: async (userId) => {
     try {
       await api.post(`/message/friend-request/${userId}`);
@@ -252,6 +282,20 @@ export const useChatStore = create((set, get) => ({
       if (!targetUserId || targetId === selectedUser?._id) set({ messages });
       throw error;
     }
+  },
+  openViewOnceMessage: async (messageId) => {
+    const res = await api.post(`/message/view-once/${messageId}/open`);
+    const updatedMessage = res.data.message;
+    set((state) => ({
+      messages: state.messages.map((message) => (message._id === messageId ? { ...message, ...updatedMessage } : message)),
+      chats: updateChatWithLastMessage(
+        state.chats.map((chat) =>
+          chat.lastMessage?._id === messageId ? { ...chat, lastMessage: updatedMessage } : chat,
+        ),
+        updatedMessage,
+      ),
+    }));
+    return res.data;
   },
 
   reactToMessage: async (messageId, emoji) => {

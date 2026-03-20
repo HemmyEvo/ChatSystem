@@ -2,8 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useChatStore } from '../store/useChatStore';
 import NoChatHistory from './NoChatHistory';
 import { useAuthStore } from '../store/useAuthStore';
-import { Check, CheckCheck, Download, Play, Pause, Smile, Reply, Mic, MapPin, ExternalLink } from 'lucide-react';
+import { Check, CheckCheck, Download, Play, Pause, Smile, Reply, Mic, MapPin, ExternalLink, EyeOff } from 'lucide-react';
 import SharedContactCard from './SharedContactCard';
+import toast from 'react-hot-toast';
 
 const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
@@ -201,6 +202,41 @@ const VoiceNotePlayer = ({ audioUrl, isOwnMessage, selectedUser }) => {
   );
 };
 
+const ViewOnceCard = ({ message, isOwnMessage, onOpen }) => (
+  <button
+    type="button"
+    onClick={(event) => {
+      event.stopPropagation();
+      if (message.canOpenViewOnce) onOpen(message);
+    }}
+    className={`mb-1 flex w-full items-center gap-3 rounded-2xl border px-4 py-4 text-left ${
+      isOwnMessage
+        ? 'border-white/10 bg-black/20 text-white'
+        : 'border-black/20 bg-black/20 text-slate-100'
+    }`}
+  >
+    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10">
+      <EyeOff size={20} />
+    </div>
+    <div className="min-w-0 flex-1">
+      <div className="font-medium">
+        {message.viewOnceOpened || message.viewOnceOpenedByPeer
+          ? 'Opened view once media'
+          : `View once ${message.video ? 'video' : 'photo'}`}
+      </div>
+      <div className="text-xs text-white/65">
+        {message.viewOnceOpened
+          ? 'You already opened this media'
+          : message.viewOnceOpenedByPeer
+            ? 'Recipient opened this media'
+            : isOwnMessage
+              ? 'Recipient can open this media only one time'
+              : 'Tap to open'}
+      </div>
+    </div>
+  </button>
+);
+
 const MessageBubble = ({
   message,
   isOwnMessage,
@@ -212,6 +248,7 @@ const MessageBubble = ({
   toggleSelectedMessage,
   reactToMessage,
   setLightboxMedia,
+  onOpenViewOnce,
   selectedUser,
   chatBubbleColors,
   selectedMessages,
@@ -335,8 +372,14 @@ const MessageBubble = ({
 
             {message.replyTo && <div className='bg-black/25 rounded px-2 py-1 mb-1 text-xs border-l-2 border-emerald-400 opacity-90 line-clamp-3 whitespace-pre-wrap'>{message.replyTo.text || (message.replyTo.location ? 'Shared location' : 'Media message')}</div>}
 
-            {message.image && <img src={message.image} alt='Attachment' onClick={(e) => { e.stopPropagation(); setLightboxMedia({ url: message.image, type: 'image' }); }} className='rounded cursor-pointer max-h-60 w-full object-cover mb-1' />}
-            {message.video && <div className='relative cursor-pointer mb-1' onClick={(e) => { e.stopPropagation(); setLightboxMedia({ url: message.video, type: 'video' }); }}><video className='rounded max-h-60 w-full bg-black object-cover'><source src={message.video} type='video/mp4' /></video><div className='absolute inset-0 flex items-center justify-center'><Play size={24} /></div></div>}
+            {message.viewOnce ? (
+              <ViewOnceCard message={message} isOwnMessage={isOwnMessage} onOpen={onOpenViewOnce} />
+            ) : (
+              <>
+                {message.image && <img src={message.image} alt='Attachment' onClick={(e) => { e.stopPropagation(); setLightboxMedia({ url: message.image, type: 'image' }); }} className='rounded cursor-pointer max-h-60 w-full object-cover mb-1' />}
+                {message.video && <div className='relative cursor-pointer mb-1' onClick={(e) => { e.stopPropagation(); setLightboxMedia({ url: message.video, type: 'video' }); }}><video className='rounded max-h-60 w-full bg-black object-cover'><source src={message.video} type='video/mp4' /></video><div className='absolute inset-0 flex items-center justify-center'><Play size={24} /></div></div>}
+              </>
+            )}
             
             {message.audio && <VoiceNotePlayer audioUrl={message.audio} isOwnMessage={isOwnMessage} selectedUser={selectedUser} />}
             
@@ -397,7 +440,7 @@ function ChatBody() {
   const { 
     messages, selectedUser, subscribeToTypingEvents, unsubscribeFromTypingEvents, 
     isTyping, isMessagesLoading, toggleSelectedMessage, selectedMessages, 
-    setReplyTarget, reactToMessage, chatBackground, chatBubbleColors, chatBgOpacity 
+    setReplyTarget, reactToMessage, chatBackground, chatBubbleColors, chatBgOpacity, openViewOnceMessage 
   } = useChatStore();
   
   const [lightboxMedia, setLightboxMedia] = useState(null);
@@ -417,6 +460,20 @@ function ChatBody() {
   }, [messages.length]);
 
   useEffect(() => { subscribeToTypingEvents(); return () => unsubscribeFromTypingEvents(); }, [subscribeToTypingEvents, unsubscribeFromTypingEvents]);
+
+  const handleOpenViewOnce = async (message) => {
+    try {
+      const result = await openViewOnceMessage(message._id);
+      if (!result?.mediaUrl || !result?.mediaType) return;
+      setLightboxMedia({
+        url: result.mediaUrl,
+        type: result.mediaType,
+        viewOnce: true,
+      });
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not open view once media');
+    }
+  };
 
   if (isMessagesLoading) return <MessageSkeleton />;
 
@@ -475,6 +532,7 @@ function ChatBody() {
                     toggleSelectedMessage={toggleSelectedMessage}
                     reactToMessage={reactToMessage}
                     setLightboxMedia={setLightboxMedia}
+                    onOpenViewOnce={handleOpenViewOnce}
                     selectedUser={selectedUser}
                     chatBubbleColors={chatBubbleColors}
                     selectedMessages={selectedMessages}
@@ -501,6 +559,7 @@ function ChatBody() {
       {lightboxMedia && (
         <div className='fixed inset-0 bg-black/95 z-[100] flex flex-col items-center justify-center p-4' onClick={() => setLightboxMedia(null)}>
           <div className='absolute top-6 right-6 z-50'><a href={lightboxMedia.url} download target='_blank' rel='noopener noreferrer' className='p-2 bg-slate-800/50 hover:bg-slate-700 rounded-full text-white transition-colors' onClick={(e) => e.stopPropagation()}><Download size={24} /></a></div>
+          {lightboxMedia.viewOnce && <div className="absolute top-6 left-6 z-50 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white backdrop-blur-md">View once</div>}
           {lightboxMedia.type === 'image' ? <img src={lightboxMedia.url} alt='Expanded view' className='max-w-full max-h-[85vh] object-contain rounded-md' /> : <video src={lightboxMedia.url} controls autoPlay className='max-w-full max-h-[85vh] rounded-md bg-black outline-none' onClick={(e) => e.stopPropagation()} />}
         </div>
       )}

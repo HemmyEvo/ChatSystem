@@ -9,6 +9,8 @@ const messageSchema = new mongoose.Schema(
     video: { type: String },
     audio: { type: String },
     document: { type: String },
+    viewOnce: { type: Boolean, default: false },
+    viewedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     sharedContactId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     location: {
       lat: { type: Number },

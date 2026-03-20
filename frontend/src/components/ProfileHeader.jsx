@@ -1,9 +1,8 @@
-import { useState, useRef, useEffect } from "react";
-import { Settings, LogOutIcon, Volume2Icon, VolumeOffIcon, ChevronDown, Download } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Settings, LogOutIcon, Volume2Icon, VolumeOffIcon, ChevronDown, Download, Pencil, Check } from "lucide-react";
 import { useAuthStore } from "../store/useAuthStore";
 import { useChatStore } from "../store/useChatStore";
 
-// 1. Initialize both specific sounds for the previews
 const receiveSoundPreview = new Audio("/sounds/notification.mp3");
 const sendSoundPreview = new Audio("/sounds/send.mp3");
 
@@ -14,7 +13,14 @@ function ProfileHeader() {
   const [openMenu, setOpenMenu] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState(null);
   const [isInstalled, setIsInstalled] = useState(window.matchMedia?.('(display-mode: standalone)').matches || false);
+  const [bioDraft, setBioDraft] = useState(authUser?.bio || '');
+  const [isSavingBio, setIsSavingBio] = useState(false);
+  const [editingBio, setEditingBio] = useState(false);
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    setBioDraft(authUser?.bio || '');
+  }, [authUser?.bio]);
 
   useEffect(() => {
     const onBeforeInstallPrompt = (event) => {
@@ -38,15 +44,11 @@ function ProfileHeader() {
     if (!file) return;
 
     const reader = new FileReader();
-    
-    // Define onloadend BEFORE reading the file (Best Practice)
     reader.onloadend = async () => {
       const base64Image = reader.result;
       setSelectedImg(base64Image);
-      // Note: Ensure your backend expects 'profilePic' or 'profilePicture'
-      await updateProfile({ profilePic: base64Image }); 
+      await updateProfile({ profilePic: base64Image });
     };
-    
     reader.readAsDataURL(file);
   };
 
@@ -58,38 +60,47 @@ function ProfileHeader() {
   };
 
   const toggleSound = (type) => {
-    // 1. Update the store state
     setSoundSetting(type);
-
-
     const isTurningOn = !soundSettings[type];
-    
     if (isTurningOn) {
       const audioToPlay = type === "send" ? sendSoundPreview : receiveSoundPreview;
       audioToPlay.currentTime = 0;
-      audioToPlay.play().catch((e) => console.log("Audio play failed:", e));
+      audioToPlay.play().catch(() => {});
+    }
+  };
+
+  const saveBio = async () => {
+    setIsSavingBio(true);
+    try {
+      await updateProfile({ bio: bioDraft.trim() });
+      setEditingBio(false);
+    } finally {
+      setIsSavingBio(false);
     }
   };
 
   return (
-    <div className="p-6 border-b border-slate-700/50">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="avatar online">
+    <div className="border-b border-[#2a3942] bg-[#111b21] px-4 py-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="relative">
             <button
-              className="size-14 rounded-full overflow-hidden relative group"
-              onClick={() => fileInputRef.current.click()}
+              className="h-14 w-14 overflow-hidden rounded-full"
+              onClick={() => fileInputRef.current?.click()}
             >
               <img
                 src={selectedImg || authUser?.profilePicture || '/avatar.png'}
                 alt="User image"
-                className="size-full object-cover"
+                className="h-full w-full object-cover"
               />
-              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                <span className="text-white text-xs">Change</span>
-              </div>
             </button>
-
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="absolute bottom-0 right-0 grid h-6 w-6 place-items-center rounded-full border-2 border-[#111b21] bg-[#00a884] text-white"
+            >
+              <Pencil size={12} />
+            </button>
             <input
               type="file"
               accept="image/*"
@@ -99,15 +110,40 @@ function ProfileHeader() {
             />
           </div>
 
-          <div>
-            <h3 className="text-slate-200 font-medium text-base max-w-[180px] truncate">@{authUser?.username}</h3>
-            <p className="text-slate-400 text-xs">Online</p>
+          <div className="min-w-0">
+            <h3 className="truncate text-base font-medium text-white">@{authUser?.username}</h3>
+            {editingBio ? (
+              <div className="mt-2 flex items-start gap-2">
+                <textarea
+                  value={bioDraft}
+                  onChange={(event) => setBioDraft(event.target.value.slice(0, 139))}
+                  className="min-h-[68px] w-full max-w-[220px] resize-none rounded-xl bg-[#202c33] px-3 py-2 text-sm text-white placeholder:text-white/35 focus:outline-none focus:ring-1 focus:ring-[#25d366]"
+                  placeholder="Add your bio"
+                />
+                <button
+                  type="button"
+                  onClick={saveBio}
+                  disabled={isSavingBio}
+                  className="mt-1 grid h-9 w-9 place-items-center rounded-full bg-[#00a884] text-white transition hover:bg-[#01906f] disabled:opacity-60"
+                >
+                  <Check size={16} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setEditingBio(true)}
+                className="mt-1 text-left text-sm text-white/62 transition hover:text-white"
+              >
+                {authUser?.bio || 'Hey there! I am using WhatsApp.'}
+              </button>
+            )}
           </div>
         </div>
 
         <div className="relative">
           <button
-            className="text-slate-400 hover:text-slate-200 transition-colors flex items-center gap-1"
+            className="flex items-center gap-1 text-slate-400 transition hover:text-slate-200"
             onClick={() => setOpenMenu((prev) => !prev)}
           >
             <Settings className="size-5" />
@@ -115,9 +151,9 @@ function ProfileHeader() {
           </button>
 
           {openMenu && (
-            <div className="absolute right-0 mt-2 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-xl p-2 z-20">
+            <div className="absolute right-0 mt-2 w-56 rounded-2xl border border-[#2a3942] bg-[#202c33] p-2 shadow-xl z-20">
               <button
-                className="w-full flex items-center justify-between px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 rounded transition-colors"
+                className="w-full flex items-center justify-between px-3 py-2 text-sm text-slate-200 hover:bg-white/5 rounded-xl transition-colors"
                 onClick={() => toggleSound("receive")}
               >
                 Receive sound
@@ -125,7 +161,7 @@ function ProfileHeader() {
               </button>
 
               <button
-                className="w-full flex items-center justify-between px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 rounded transition-colors"
+                className="w-full flex items-center justify-between px-3 py-2 text-sm text-slate-200 hover:bg-white/5 rounded-xl transition-colors"
                 onClick={() => toggleSound("send")}
               >
                 Send sound
@@ -134,7 +170,7 @@ function ProfileHeader() {
 
               {!isInstalled && installPromptEvent && (
                 <button
-                  className="w-full flex items-center justify-between px-3 py-2 text-sm text-cyan-300 hover:bg-slate-700 rounded transition-colors"
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm text-cyan-300 hover:bg-white/5 rounded-xl transition-colors"
                   onClick={handleInstallApp}
                 >
                   Install app
@@ -143,7 +179,7 @@ function ProfileHeader() {
               )}
 
               <button
-                className="w-full flex items-center justify-between px-3 py-2 text-sm text-rose-300 hover:bg-slate-700 rounded transition-colors mt-1 border-t border-slate-700/50 pt-2"
+                className="mt-1 w-full flex items-center justify-between border-t border-white/5 px-3 py-2 pt-3 text-sm text-rose-300 hover:bg-white/5 rounded-xl transition-colors"
                 onClick={logout}
               >
                 Logout
