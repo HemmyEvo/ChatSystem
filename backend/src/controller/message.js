@@ -54,6 +54,17 @@ const serializeStatusUser = (user, viewerId) => {
     createdAt: status.createdAt,
     expiresAt: status.expiresAt,
     viewersCount: status.viewers?.length || 0,
+    viewers: (status.viewers || []).map((viewer) => ({
+      _id: viewer._id || viewer,
+      username: viewer.username || '',
+      profilePicture: viewer.profilePicture || '',
+    })),
+    reactions: (status.reactions || []).map((reaction) => ({
+      userId: reaction.userId?._id || reaction.userId,
+      username: reaction.userId?.username || '',
+      profilePicture: reaction.userId?.profilePicture || '',
+      emoji: reaction.emoji,
+    })),
     seen: (status.viewers || []).some((viewer) => getIdString(viewer) === viewerIdStr),
   }));
 
@@ -82,6 +93,7 @@ const serializeMessageForViewer = (message, viewerId) => {
     viewOnceOpenedByPeer: Boolean(plain.viewOnce && isSender && hasBeenViewed),
     canOpenViewOnce: Boolean(plain.viewOnce && !isSender && !hasBeenViewed),
     image: isLockedForViewer ? null : plain.image,
+    sticker: plain.sticker,
     video: isLockedForViewer ? null : plain.video,
   };
 };
@@ -330,11 +342,11 @@ export const messageController = {
 
   sendMessage: async (req, res) => {
     try {
-      const { text, image, video, audio, document, sharedContactId, replyTo, location, viewOnce } = req.body;
+      const { text, image, sticker, video, audio, document, sharedContactId, replyTo, location, viewOnce } = req.body;
       const senderId = req.user._id;
       const { id: receiverId } = req.params;
 
-      if (!text && !image && !video && !audio && !document && !sharedContactId && !location) {
+      if (!text && !image && !sticker && !video && !audio && !document && !sharedContactId && !location) {
         return res.status(400).json({ message: "Message content is required" });
       }
 
@@ -356,8 +368,9 @@ export const messageController = {
         return uploadResult.secure_url;
       };
 
-      const [imageUrl, videoUrl, audioUrl, documentUrl] = await Promise.all([
+      const [imageUrl, stickerUrl, videoUrl, audioUrl, documentUrl] = await Promise.all([
         uploadMedia(image),
+        uploadMedia(sticker),
         uploadMedia(video),
         uploadMedia(audio),
         uploadMedia(document),
@@ -368,6 +381,7 @@ export const messageController = {
         receiverId,
         text,
         image: imageUrl,
+        sticker: stickerUrl,
         video: videoUrl,
         audio: audioUrl,
         document: documentUrl,
@@ -429,7 +443,16 @@ export const messageController = {
     try {
       const myId = req.user._id;
       const me = await User.findById(myId)
-        .populate('friends', 'username profilePicture bio statusItems')
+        .populate({
+          path: 'friends',
+          select: 'username profilePicture bio statusItems',
+          populate: [
+            { path: 'statusItems.viewers', select: 'username profilePicture' },
+            { path: 'statusItems.reactions.userId', select: 'username profilePicture' },
+          ],
+        })
+        .populate('statusItems.viewers', 'username profilePicture')
+        .populate('statusItems.reactions.userId', 'username profilePicture')
         .select('username profilePicture bio statusItems friends');
 
       const usersWithStatuses = [me, ...(me?.friends || [])]
@@ -481,6 +504,8 @@ export const messageController = {
       updatedUser.statusItems.push(statusItem);
       updatedUser.statusItems = updatedUser.statusItems.slice(-30);
       await updatedUser.save();
+      await updatedUser.populate('statusItems.viewers', 'username profilePicture');
+      await updatedUser.populate('statusItems.reactions.userId', 'username profilePicture');
 
       return res.status(201).json({ statusUser: serializeStatusUser(updatedUser, userId) });
     } catch (error) {
@@ -493,7 +518,10 @@ export const messageController = {
     try {
       const viewerId = req.user._id;
       const { id: statusId } = req.params;
-      const owner = await User.findOne({ 'statusItems._id': statusId }).select('username profilePicture bio friends statusItems');
+      const owner = await User.findOne({ 'statusItems._id': statusId })
+        .populate('statusItems.viewers', 'username profilePicture')
+        .populate('statusItems.reactions.userId', 'username profilePicture')
+        .select('username profilePicture bio friends statusItems');
       if (!owner) return res.status(404).json({ message: 'Status not found' });
 
       const isOwner = owner._id.toString() === viewerId.toString();
@@ -509,10 +537,37 @@ export const messageController = {
         );
       }
 
-      const refreshedOwner = await User.findById(owner._id).select('username profilePicture bio statusItems');
+      const refreshedOwner = await User.findById(owner._id)
+        .populate('statusItems.viewers', 'username profilePicture')
+        .populate('statusItems.reactions.userId', 'username profilePicture')
+        .select('username profilePicture bio statusItems');
       return res.status(200).json({ statusUser: serializeStatusUser(refreshedOwner, viewerId) });
     } catch (error) {
       console.error('Error viewing status:', error);
+      return res.status(500).json({ message: 'Server error' });
+    }
+  },
+
+  reactToStatus: async (req, res) => {
+    try {
+      const userId = req.user._id;
+      const { id: statusId } = req.params;
+      const { emoji } = req.body;
+      const owner = await User.findOne({ 'statusItems._id': statusId }).select('statusItems username profilePicture bio friends');
+      if (!owner) return res.status(404).json({ message: 'Status not found' });
+
+      const status = owner.statusItems.id(statusId);
+      if (!status) return res.status(404).json({ message: 'Status not found' });
+
+      status.reactions = (status.reactions || []).filter((reaction) => reaction.userId.toString() !== userId.toString());
+      if (emoji) status.reactions.push({ userId, emoji });
+      await owner.save();
+      await owner.populate('statusItems.viewers', 'username profilePicture');
+      await owner.populate('statusItems.reactions.userId', 'username profilePicture');
+
+      return res.status(200).json({ statusUser: serializeStatusUser(owner, userId) });
+    } catch (error) {
+      console.error('Error reacting to status:', error);
       return res.status(500).json({ message: 'Server error' });
     }
   },

@@ -56,12 +56,15 @@ function ChatHeader() {
   const { onlineUsers, userLastSeenMap } = useAuthStore();
   const { startCall, activeCallUser, callStatus } = useCallStore();
   const [showMenu, setShowMenu] = useState(false);
+  const [showDeleteMenu, setShowDeleteMenu] = useState(false);
   
   // NEW: State for the profile image lightbox
   const [showLightbox, setShowLightbox] = useState(false);
   
   const online = onlineUsers.includes(selectedUser?._id);
   const fileInputRef = useRef(null);
+  const menuRef = useRef(null);
+  const deleteMenuRef = useRef(null);
 
   const selectedItems = useMemo(() => messages.filter((m) => selectedMessages.includes(m._id)), [messages, selectedMessages]);
   const myId = useAuthStore.getState().authUser?._id;
@@ -78,6 +81,23 @@ function ChatHeader() {
     window.addEventListener('keydown', handleEscKey);
     return () => window.removeEventListener('keydown', handleEscKey);
   }, [setSelectedUser, selectedMessages.length, clearSelectedMessages, showLightbox]);
+
+  useEffect(() => {
+    const handlePointerDown = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setShowMenu(false);
+      }
+      if (deleteMenuRef.current && !deleteMenuRef.current.contains(event.target)) {
+        setShowDeleteMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+    };
+  }, []);
 
   const lastSeen = userLastSeenMap[selectedUser?._id] || selectedUser?.lastSeen;
 
@@ -127,12 +147,14 @@ function ChatHeader() {
               <button onClick={copySelected}><Copy size={18} /></button>
               <button onClick={() => { if (selectedItems[0]) setReplyTarget(selectedItems[0]); clearSelectedMessages(); }}><Reply size={18} /></button>
               <button onClick={openForwardModal}><Forward size={18} /></button>
-              <div className='dropdown dropdown-end'>
-                <button tabIndex={0}><Trash2 size={18} /></button>
-                <ul tabIndex={0} className='dropdown-content menu p-2 shadow bg-[#233138] rounded-box w-44 z-50'>
-                  <li><button onClick={handleDelete}>Delete for me</button></li>
-                  {canDeleteForEveryone && <li><button onClick={handleDeleteEveryone}>Delete for everyone</button></li>}
-                </ul>
+              <div className='relative' ref={deleteMenuRef}>
+                <button onClick={() => setShowDeleteMenu((value) => !value)}><Trash2 size={18} /></button>
+                {showDeleteMenu && (
+                  <div className='absolute right-0 top-7 w-44 rounded-md border border-slate-700 bg-[#233138] p-2 shadow z-50'>
+                    <button className='w-full rounded px-3 py-2 text-left text-sm text-slate-100 hover:bg-[#2d3d45]' onClick={handleDelete}>Delete for me</button>
+                    {canDeleteForEveryone && <button className='mt-1 w-full rounded px-3 py-2 text-left text-sm text-slate-100 hover:bg-[#2d3d45]' onClick={handleDeleteEveryone}>Delete for everyone</button>}
+                  </div>
+                )}
               </div>
             </div>
           </>
@@ -159,7 +181,7 @@ function ChatHeader() {
               </div>
             </div>
 
-            <div className='relative flex items-center gap-2'>
+            <div className='relative flex items-center gap-2' ref={menuRef}>
               <button
                 type="button"
                 onClick={() => startCall(selectedUser, { video: false })}

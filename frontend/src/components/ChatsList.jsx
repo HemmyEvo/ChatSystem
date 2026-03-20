@@ -13,6 +13,7 @@ const getLastMessagePreview = (message) => {
     if (message.video) return "View once video";
     return "View once media";
   }
+  if (message.sticker) return "Sticker";
   if (message.text) return message.text;
   if (message.audio) return "Voice message";
   if (message.image) return "Photo";
@@ -22,6 +23,7 @@ const getLastMessagePreview = (message) => {
 };
 const getLastMessageIcon = (message) => {
   if (!message) return null;
+  if (message.sticker) return null;
   if (message.audio) return <Mic size={13} className="text-slate-400" />;
   if (message.image) return <ImageIcon size={13} className="text-slate-400" />;
   if (message.video) return <Video size={13} className="text-slate-400" />;

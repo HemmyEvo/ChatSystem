@@ -8,6 +8,12 @@ const statusItemSchema = new mongoose.Schema(
     backgroundColor: { type: String, default: '#0b141a' },
     textColor: { type: String, default: '#ffffff' },
     viewers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    reactions: [
+      {
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+        emoji: { type: String, required: true },
+      },
+    ],
     createdAt: { type: Date, default: Date.now },
     expiresAt: { type: Date, required: true },
   },
@@ -19,7 +25,7 @@ const userSchema = new mongoose.Schema({
     password: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     profilePicture: { type: String, default: '' },
-    bio: { type: String, maxlength: 139, default: 'Hey there! I am using WhatsApp.' },
+    bio: { type: String, maxlength: 139, default: 'Hey there! I am using Existo app.' },
     statusItems: [statusItemSchema],
     lastSeen: { type: Date, default: Date.now },
     blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],

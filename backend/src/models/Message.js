@@ -6,6 +6,7 @@ const messageSchema = new mongoose.Schema(
     receiverId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     text: { type: String, maxlength: 2000 },
     image: { type: String },
+    sticker: { type: String },
     video: { type: String },
     audio: { type: String },
     document: { type: String },

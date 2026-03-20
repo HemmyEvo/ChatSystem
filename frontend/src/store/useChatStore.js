@@ -91,6 +91,8 @@ export const useChatStore = create((set, get) => ({
   archivedChatIds: JSON.parse(localStorage.getItem("archivedChatIds") || "[]"),
   pinnedChatIds: JSON.parse(localStorage.getItem("pinnedChatIds") || "[]"),
   soundSettings: JSON.parse(localStorage.getItem("soundSettings") || '{"receive":true,"send":true}'),
+  ringtone: localStorage.getItem("existoRingtone") || '',
+  ringtoneName: localStorage.getItem("existoRingtoneName") || 'Default ringtone',
   chatBackground: localStorage.getItem("chatBackground") || null,
   chatBgOpacity: Number(localStorage.getItem("chatBgOpacity")) || 0.4,
   chatBubbleColors: JSON.parse(localStorage.getItem("chatBubbleColors") || '{"own": "#005c4b", "other": "#202c33"}'),
@@ -110,6 +112,11 @@ export const useChatStore = create((set, get) => ({
   },
   setChatBgOpacity: (opacity) => { localStorage.setItem("chatBgOpacity", opacity); set({ chatBgOpacity: opacity }); },
   setChatBubbleColors: (colors) => { localStorage.setItem("chatBubbleColors", JSON.stringify(colors)); set({ chatBubbleColors: colors }); },
+  setRingtone: ({ dataUrl, name }) => {
+    localStorage.setItem("existoRingtone", dataUrl || '');
+    localStorage.setItem("existoRingtoneName", name || 'Default ringtone');
+    set({ ringtone: dataUrl || '', ringtoneName: name || 'Default ringtone' });
+  },
   setSoundSetting: (type) => {
     const currentSettings = get().soundSettings;
     const newSettings = { ...currentSettings, [type]: !currentSettings[type] };
@@ -196,6 +203,14 @@ export const useChatStore = create((set, get) => ({
   },
   markStatusViewed: async (statusId) => {
     const res = await api.post(`/message/status/${statusId}/view`);
+    const updatedUser = res.data.statusUser;
+    set((state) => ({
+      statuses: state.statuses.map((entry) => (entry._id === updatedUser._id ? updatedUser : entry)),
+    }));
+    return updatedUser;
+  },
+  reactToStatus: async (statusId, emoji) => {
+    const res = await api.post(`/message/status/${statusId}/react`, { emoji });
     const updatedUser = res.data.statusUser;
     set((state) => ({
       statuses: state.statuses.map((entry) => (entry._id === updatedUser._id ? updatedUser : entry)),
@@ -308,7 +323,7 @@ export const useChatStore = create((set, get) => ({
   forwardSelectedMessages: async (targetUserId) => {
     const selected = get().messages.filter((m) => get().selectedMessages.includes(m._id));
     for (const msg of selected) {
-      await get().sendMessage({ text: msg.text, image: msg.image, video: msg.video, audio: msg.audio, document: msg.document, sharedContactId: msg.sharedContactId?._id || msg.sharedContactId, location: msg.location }, targetUserId);
+      await get().sendMessage({ text: msg.text, image: msg.image, sticker: msg.sticker, video: msg.video, audio: msg.audio, document: msg.document, sharedContactId: msg.sharedContactId?._id || msg.sharedContactId, location: msg.location }, targetUserId);
     }
     set({ selectedMessages: [], showForwardModal: false });
     toast.success('Message forwarded');

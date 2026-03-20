@@ -12,6 +12,7 @@ router.get('/chats', messageController.chats);
 router.get('/statuses', messageController.statuses);
 router.post('/status', messageController.postStatus);
 router.post('/status/:id/view', messageController.viewStatus);
+router.post('/status/:id/react', messageController.reactToStatus);
 router.post('/view-once/:id/open', messageController.openViewOnceMessage);
 router.get('/:id', messageController.messageById);
 router.post('/send/:id', messageController.sendMessage);

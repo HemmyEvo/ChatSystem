@@ -460,8 +460,24 @@ export const useCallStore = create((set, get) => ({
   toggleScreenShare: async () => {
     if (get().callMode !== 'video') return;
     try {
+      const getDisplayMedia =
+        navigator.mediaDevices?.getDisplayMedia?.bind(navigator.mediaDevices) ||
+        navigator.getDisplayMedia?.bind(navigator);
+
+      if (!getDisplayMedia) {
+        toast.error('Screen sharing is not supported on this device/browser.');
+        return;
+      }
+
       if (!get().isScreenSharing) {
-        const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        const displayStream = await getDisplayMedia({
+          video: {
+            frameRate: 15,
+          },
+          audio: false,
+          preferCurrentTab: true,
+          selfBrowserSurface: 'include',
+        });
         const displayTrack = displayStream.getVideoTracks()[0];
         if (!displayTrack) return;
         displayTrack.onended = () => { if (get().isScreenSharing) get().toggleScreenShare(); };

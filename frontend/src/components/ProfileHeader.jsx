@@ -8,7 +8,7 @@ const sendSoundPreview = new Audio("/sounds/send.mp3");
 
 function ProfileHeader() {
   const { logout, authUser, updateProfile } = useAuthStore();
-  const { soundSettings, setSoundSetting } = useChatStore();
+  const { soundSettings, setSoundSetting, ringtoneName, setRingtone } = useChatStore();
   const [selectedImg, setSelectedImg] = useState(null);
   const [openMenu, setOpenMenu] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState(null);
@@ -17,10 +17,27 @@ function ProfileHeader() {
   const [isSavingBio, setIsSavingBio] = useState(false);
   const [editingBio, setEditingBio] = useState(false);
   const fileInputRef = useRef(null);
+  const menuRef = useRef(null);
+  const ringtoneInputRef = useRef(null);
 
   useEffect(() => {
     setBioDraft(authUser?.bio || '');
   }, [authUser?.bio]);
+
+  useEffect(() => {
+    if (!openMenu) return undefined;
+    const handlePointerDown = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setOpenMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+    };
+  }, [openMenu]);
 
   useEffect(() => {
     const onBeforeInstallPrompt = (event) => {
@@ -57,6 +74,17 @@ function ProfileHeader() {
     await installPromptEvent.prompt();
     await installPromptEvent.userChoice.catch(() => null);
     setInstallPromptEvent(null);
+  };
+
+  const handleRingtoneUpload = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setRingtone({ dataUrl: reader.result, name: file.name });
+    };
+    reader.readAsDataURL(file);
+    event.target.value = '';
   };
 
   const toggleSound = (type) => {
@@ -135,13 +163,13 @@ function ProfileHeader() {
                 onClick={() => setEditingBio(true)}
                 className="mt-1 text-left text-sm text-white/62 transition hover:text-white"
               >
-                {authUser?.bio || 'Hey there! I am using WhatsApp.'}
+                {authUser?.bio || 'Hey there! I am using Existo app.'}
               </button>
             )}
           </div>
         </div>
 
-        <div className="relative">
+        <div className="relative" ref={menuRef}>
           <button
             className="flex items-center gap-1 text-slate-400 transition hover:text-slate-200"
             onClick={() => setOpenMenu((prev) => !prev)}
@@ -168,6 +196,14 @@ function ProfileHeader() {
                 {soundSettings.send ? <Volume2Icon className="size-4 text-emerald-400" /> : <VolumeOffIcon className="size-4 text-slate-500" />}
               </button>
 
+              <button
+                className="w-full flex items-center justify-between px-3 py-2 text-sm text-slate-200 hover:bg-white/5 rounded-xl transition-colors"
+                onClick={() => ringtoneInputRef.current?.click()}
+              >
+                Ringtone
+                <span className="max-w-[110px] truncate text-[11px] text-slate-400">{ringtoneName}</span>
+              </button>
+
               {!isInstalled && installPromptEvent && (
                 <button
                   className="w-full flex items-center justify-between px-3 py-2 text-sm text-cyan-300 hover:bg-white/5 rounded-xl transition-colors"
@@ -187,6 +223,13 @@ function ProfileHeader() {
               </button>
             </div>
           )}
+          <input
+            ref={ringtoneInputRef}
+            type="file"
+            accept="audio/*"
+            hidden
+            onChange={handleRingtoneUpload}
+          />
         </div>
       </div>
     </div>

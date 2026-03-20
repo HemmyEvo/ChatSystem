@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Camera, Image as ImageIcon, Pencil, Plus, X } from 'lucide-react';
+import { Camera, ChevronUp, Eye, Image as ImageIcon, MessageCircle, Pencil, Plus, Smile, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useChatStore } from '../store/useChatStore';
 import { useAuthStore } from '../store/useAuthStore';
 
 const TEXT_BACKGROUNDS = ['#0b141a', '#202c33', '#103629', '#4a2040', '#40220f', '#1b3c59'];
+const STATUS_REACTIONS = ['❤️', '😂', '😍', '🔥', '👏', '😮'];
 
 const getRelativeLabel = (dateString) => {
   if (!dateString) return 'Just now';
@@ -86,7 +87,7 @@ function StatusComposer({ onClose }) {
         <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
           <div>
             <h3 className="text-lg font-medium">New status</h3>
-            <p className="text-sm text-white/60">Share a moment like WhatsApp</p>
+            <p className="text-sm text-white/60">Share a moment on Existo app</p>
           </div>
           <button onClick={onClose} className="rounded-full p-2 text-white/70 transition hover:bg-white/10 hover:text-white">
             <X size={18} />
@@ -185,10 +186,12 @@ function StatusComposer({ onClose }) {
 }
 
 function StatusViewer({ groups, activeGroupIndex, activeStatusIndex, onClose, onNext, onPrev }) {
-  const { markStatusViewed } = useChatStore();
+  const { markStatusViewed, reactToStatus } = useChatStore();
   const authUser = useAuthStore((state) => state.authUser);
+  const [showViewerSheet, setShowViewerSheet] = useState(false);
   const activeGroup = groups[activeGroupIndex];
   const activeStatus = activeGroup?.statuses?.[activeStatusIndex];
+  const isOwnStatus = activeGroup?._id === authUser?._id;
 
   useEffect(() => {
     if (!activeStatus || !activeGroup) return undefined;
@@ -234,7 +237,7 @@ function StatusViewer({ groups, activeGroupIndex, activeStatusIndex, onClose, on
             <div className="flex items-center gap-3">
               <img src={activeGroup.profilePicture || '/avatar.png'} alt={activeGroup.username} className="h-10 w-10 rounded-full object-cover" />
               <div>
-                <div className="font-medium">{activeGroup._id === authUser?._id ? 'My status' : activeGroup.username}</div>
+                <div className="font-medium">{isOwnStatus ? 'My status' : activeGroup.username}</div>
                 <div className="text-sm text-white/65">{getRelativeLabel(activeStatus.createdAt)}</div>
               </div>
             </div>
@@ -248,12 +251,93 @@ function StatusViewer({ groups, activeGroupIndex, activeStatusIndex, onClose, on
           <button aria-label="Previous status" type="button" className="h-full w-full" onClick={onPrev} />
           <button aria-label="Next status" type="button" className="h-full w-full" onClick={onNext} />
         </div>
+
+        <div className="relative z-10 flex items-center justify-between gap-3">
+          {isOwnStatus ? (
+            <button
+              type="button"
+              onClick={() => setShowViewerSheet((value) => !value)}
+              className="inline-flex items-center gap-2 rounded-full bg-black/35 px-4 py-2 text-sm text-white backdrop-blur-md"
+            >
+              <Eye size={16} /> {activeStatus.viewersCount} viewers <ChevronUp size={16} />
+            </button>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {STATUS_REACTIONS.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => reactToStatus(activeStatus._id, emoji)}
+                  className="rounded-full bg-black/35 px-3 py-2 text-lg backdrop-blur-md transition hover:bg-black/50"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {!isOwnStatus && (
+            <button
+              type="button"
+              onClick={() => reactToStatus(activeStatus._id, null)}
+              className="inline-flex items-center gap-2 rounded-full bg-black/35 px-4 py-2 text-sm text-white backdrop-blur-md"
+            >
+              <Smile size={16} /> React
+            </button>
+          )}
+        </div>
       </div>
+
+      {isOwnStatus && showViewerSheet && (
+        <div className="absolute inset-x-0 bottom-0 z-20 rounded-t-[1.8rem] bg-[#111b21] p-5 shadow-2xl">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <div className="text-base font-medium">Status activity</div>
+              <div className="text-sm text-white/55">{activeStatus.viewersCount} viewers</div>
+            </div>
+            <button onClick={() => setShowViewerSheet(false)} className="rounded-full p-2 text-white/75 hover:bg-white/10 hover:text-white">
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="mb-4">
+            <div className="mb-2 text-xs uppercase tracking-[0.2em] text-white/40">Reactions</div>
+            <div className="flex flex-wrap gap-2">
+              {(activeStatus.reactions || []).length ? (
+                activeStatus.reactions.map((reaction, index) => (
+                  <div key={`${reaction.userId}-${index}`} className="inline-flex items-center gap-2 rounded-full bg-white/8 px-3 py-1.5 text-sm">
+                    <span>{reaction.emoji}</span>
+                    <span>{reaction.username || 'user'}</span>
+                  </div>
+                ))
+              ) : (
+                <div className="text-sm text-white/50">No reactions yet</div>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-2 text-xs uppercase tracking-[0.2em] text-white/40">Viewers</div>
+            <div className="max-h-56 space-y-2 overflow-y-auto">
+              {(activeStatus.viewers || []).length ? (
+                activeStatus.viewers.map((viewer) => (
+                  <div key={viewer._id} className="flex items-center gap-3 rounded-2xl bg-white/5 px-3 py-2">
+                    <img src={viewer.profilePicture || '/avatar.png'} alt={viewer.username} className="h-10 w-10 rounded-full object-cover" />
+                    <div className="font-medium">{viewer.username || 'user'}</div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-sm text-white/50">No viewers yet</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function StatusPanel() {
+function StatusPanel({ compact = false, onOpenChatWithUser = null }) {
   const { statuses, getStatuses, isStatusesLoading } = useChatStore();
   const authUser = useAuthStore((state) => state.authUser);
   const [isComposerOpen, setIsComposerOpen] = useState(false);
@@ -311,10 +395,12 @@ function StatusPanel() {
 
   return (
     <>
-      <div className="space-y-4">
-        <div className="px-2">
-          <h2 className="text-[1.7rem] font-semibold text-white">Updates</h2>
-        </div>
+      <div className={`space-y-4 ${compact ? '' : ''}`}>
+        {!compact && (
+          <div className="px-2">
+            <h2 className="text-[1.7rem] font-semibold text-white">Updates</h2>
+          </div>
+        )}
 
         <div className="rounded-[1.4rem] bg-[#111b21] p-4 text-white shadow-sm">
           <button
@@ -342,26 +428,28 @@ function StatusPanel() {
             </div>
           </button>
 
-          <div className="mt-4 flex gap-2">
-            <button
-              type="button"
-              onClick={() => setIsComposerOpen(true)}
-              className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm text-white/90 transition hover:bg-white/15"
-            >
-              <Pencil size={16} /> Text
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsComposerOpen(true)}
-              className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm text-white/90 transition hover:bg-white/15"
-            >
-              <Camera size={16} /> Photo or video
-            </button>
-          </div>
+          {!compact && (
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setIsComposerOpen(true)}
+                className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm text-white/90 transition hover:bg-white/15"
+              >
+                <Pencil size={16} /> Text
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsComposerOpen(true)}
+                className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm text-white/90 transition hover:bg-white/15"
+              >
+                <Camera size={16} /> Photo or video
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="rounded-[1.4rem] bg-[#111b21] p-4 text-white shadow-sm">
-          <div className="mb-3 text-xs font-medium uppercase tracking-[0.22em] text-white/45">Recent updates</div>
+          <div className="mb-3 text-xs font-medium uppercase tracking-[0.22em] text-white/45">{compact ? 'Status' : 'Recent updates'}</div>
 
           {isStatusesLoading ? (
             <div className="space-y-3">
@@ -378,22 +466,32 @@ function StatusPanel() {
           ) : contactGroups.length ? (
             <div className="space-y-2">
               {contactGroups.map((group, index) => (
-                <button
-                  key={group._id}
-                  type="button"
-                  onClick={() => openViewer(index + 1, 0)}
-                  className="flex w-full items-center gap-3 rounded-[1rem] px-2 py-2 text-left transition hover:bg-white/5"
-                >
-                  <StatusRing seen={!group.hasUnseen}>
-                    <img src={group.profilePicture || '/avatar.png'} alt={group.username} className="h-14 w-14 rounded-full object-cover" />
-                  </StatusRing>
-                  <div className="min-w-0 flex-1">
-                    <div className="font-medium">{group.username}</div>
-                    <div className="truncate text-sm text-white/58">
-                      {group.statuses[0] ? getRelativeLabel(group.statuses[group.statuses.length - 1].createdAt) : 'No updates'}
+                <div key={group._id} className="flex items-center gap-2 rounded-[1rem] px-2 py-2 transition hover:bg-white/5">
+                  <button
+                    type="button"
+                    onClick={() => openViewer(index + 1, 0)}
+                    className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                  >
+                    <StatusRing seen={!group.hasUnseen}>
+                      <img src={group.profilePicture || '/avatar.png'} alt={group.username} className="h-14 w-14 rounded-full object-cover" />
+                    </StatusRing>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium">{group.username}</div>
+                      <div className="truncate text-sm text-white/58">
+                        {group.statuses[0] ? getRelativeLabel(group.statuses[group.statuses.length - 1].createdAt) : 'No updates'}
+                      </div>
                     </div>
-                  </div>
-                </button>
+                  </button>
+                  {compact && onOpenChatWithUser && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenChatWithUser(group)}
+                      className="rounded-full bg-white/8 p-2 text-white/75 transition hover:bg-white/12 hover:text-white"
+                    >
+                      <MessageCircle size={16} />
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           ) : (

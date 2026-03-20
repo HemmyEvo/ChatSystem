@@ -376,6 +376,7 @@ const MessageBubble = ({
               <ViewOnceCard message={message} isOwnMessage={isOwnMessage} onOpen={onOpenViewOnce} />
             ) : (
               <>
+                {message.sticker && <img src={message.sticker} alt='Sticker' className='mb-1 h-28 w-28 rounded-2xl object-contain bg-transparent' />}
                 {message.image && <img src={message.image} alt='Attachment' onClick={(e) => { e.stopPropagation(); setLightboxMedia({ url: message.image, type: 'image' }); }} className='rounded cursor-pointer max-h-60 w-full object-cover mb-1' />}
                 {message.video && <div className='relative cursor-pointer mb-1' onClick={(e) => { e.stopPropagation(); setLightboxMedia({ url: message.video, type: 'video' }); }}><video className='rounded max-h-60 w-full bg-black object-cover'><source src={message.video} type='video/mp4' /></video><div className='absolute inset-0 flex items-center justify-center'><Play size={24} /></div></div>}
               </>

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useCallStore } from '../store/useCallStore';
 import { useAuthStore } from '../store/useAuthStore';
+import { useChatStore } from '../store/useChatStore';
 
 const formatDuration = (seconds = 0) => {
   const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
@@ -540,6 +541,18 @@ function CallLayer() {
     clearDrawings,
     clearMissedCalls,
   } = useCallStore();
+  const ringtone = useChatStore((state) => state.ringtone);
+
+  useEffect(() => {
+    if (!incomingCall) return undefined;
+    const ringAudio = new Audio(ringtone || '/sounds/notification.mp3');
+    ringAudio.loop = true;
+    ringAudio.play().catch(() => {});
+    return () => {
+      ringAudio.pause();
+      ringAudio.currentTime = 0;
+    };
+  }, [incomingCall, ringtone]);
 
   const effectiveMode = incomingCall?.media?.video ? 'video' : activeCallUser ? callMode : 'voice';
   const isVideoCall = effectiveMode === 'video';
