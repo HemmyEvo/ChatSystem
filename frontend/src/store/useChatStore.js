@@ -42,6 +42,18 @@ const syncChatAfterDeletion = (chats, chatUserId, lastMessage) =>
 const updatePersonRelationship = (people, userId, updates) =>
   people.map((person) => (person._id === userId ? { ...person, ...updates } : person));
 
+const mergeUniqueIds = (existing = [], value) => Array.from(new Set([...(existing || []), value]));
+
+const updateMessageStatusByIds = (messages, messageIds, updater) =>
+  messages.map((message) => (messageIds.includes(message._id) ? updater(message) : message));
+
+const updateChatLastMessageByIds = (chats, messageIds, updater) =>
+  chats.map((chat) =>
+    messageIds.includes(chat.lastMessage?._id)
+      ? { ...chat, lastMessage: updater(chat.lastMessage) }
+      : chat,
+  );
+
 let typingTimeout = null;
 
 const clearBrowserSession = async () => {
@@ -96,6 +108,9 @@ export const useChatStore = create((set, get) => ({
   chatBackground: localStorage.getItem("chatBackground") || null,
   chatBgOpacity: Number(localStorage.getItem("chatBgOpacity")) || 0.4,
   chatBubbleColors: JSON.parse(localStorage.getItem("chatBubbleColors") || '{"own": "#005c4b", "other": "#202c33"}'),
+  favoriteStickers: JSON.parse(localStorage.getItem("favoriteStickers") || "[]"),
+  recentStickers: JSON.parse(localStorage.getItem("recentStickers") || "[]"),
+  customStickers: JSON.parse(localStorage.getItem("customStickers") || "[]"),
 
   setChatBackground: (imageUrl) => {
     try {
@@ -112,6 +127,22 @@ export const useChatStore = create((set, get) => ({
   },
   setChatBgOpacity: (opacity) => { localStorage.setItem("chatBgOpacity", opacity); set({ chatBgOpacity: opacity }); },
   setChatBubbleColors: (colors) => { localStorage.setItem("chatBubbleColors", JSON.stringify(colors)); set({ chatBubbleColors: colors }); },
+  toggleFavoriteSticker: (sticker) => {
+    const current = get().favoriteStickers;
+    const updated = current.includes(sticker) ? current.filter((entry) => entry !== sticker) : [sticker, ...current].slice(0, 48);
+    localStorage.setItem("favoriteStickers", JSON.stringify(updated));
+    set({ favoriteStickers: updated });
+  },
+  addRecentSticker: (sticker) => {
+    const updated = [sticker, ...get().recentStickers.filter((entry) => entry !== sticker)].slice(0, 36);
+    localStorage.setItem("recentStickers", JSON.stringify(updated));
+    set({ recentStickers: updated });
+  },
+  saveCustomSticker: (sticker) => {
+    const updated = [sticker, ...get().customStickers.filter((entry) => entry !== sticker)].slice(0, 36);
+    localStorage.setItem("customStickers", JSON.stringify(updated));
+    set({ customStickers: updated });
+  },
   setRingtone: ({ dataUrl, name }) => {
     localStorage.setItem("existoRingtone", dataUrl || '');
     localStorage.setItem("existoRingtoneName", name || 'Default ringtone');
@@ -281,7 +312,7 @@ export const useChatStore = create((set, get) => ({
     const me = useAuthStore.getState().authUser;
     const payload = { ...messageData, ...(replyTarget && !targetUserId ? { replyTo: replyTarget._id } : {}) };
     const tempId = `temp-${Date.now()}-${Math.random()}`;
-    const optimisticMessage = { _id: tempId, senderId: me._id, receiverId: targetId, ...payload, createdAt: new Date().toISOString(), readBy: [me._id], deliveredTo: [], isOptimistic: true };
+    const optimisticMessage = { _id: tempId, senderId: me._id, receiverId: targetId, ...payload, createdAt: new Date().toISOString(), readBy: [me._id], deliveredTo: [me._id], isOptimistic: true };
 
     if (!targetUserId || targetId === selectedUser?._id) {
       set({ messages: [...messages, optimisticMessage], chats: updateChatWithLastMessage(get().chats, optimisticMessage), replyTarget: null });
@@ -383,10 +414,34 @@ export const useChatStore = create((set, get) => ({
       set({ messages: get().messages.map((m) => m._id === messageId ? { ...m, reactions } : m) });
     });
     socket.on('messages:read', ({ messageIds, readerId, chatUserId }) => {
-      set({ messages: get().messages.map((msg) => messageIds.includes(msg._id) ? { ...msg, readBy: [...new Set([...(msg.readBy || []), readerId])] } : msg), chats: get().chats.map((chat) => chat._id === chatUserId ? { ...chat, unreadCount: 0 } : chat) });
+      set({
+        messages: updateMessageStatusByIds(get().messages, messageIds, (message) => ({
+          ...message,
+          readBy: mergeUniqueIds(message.readBy, readerId),
+          deliveredTo: mergeUniqueIds(message.deliveredTo, readerId),
+        })),
+        chats: updateChatLastMessageByIds(
+          get().chats.map((chat) => chat._id === chatUserId ? { ...chat, unreadCount: 0 } : chat),
+          messageIds,
+          (message) => ({
+            ...message,
+            readBy: mergeUniqueIds(message.readBy, readerId),
+            deliveredTo: mergeUniqueIds(message.deliveredTo, readerId),
+          }),
+        ),
+      });
     });
     socket.on('messages:delivered', ({ receiverId, messageIds }) => {
-      set({ messages: get().messages.map((msg) => messageIds.includes(msg._id) ? { ...msg, deliveredTo: [...new Set([...(msg.deliveredTo || []), receiverId])] } : msg) });
+      set({
+        messages: updateMessageStatusByIds(get().messages, messageIds, (message) => ({
+          ...message,
+          deliveredTo: mergeUniqueIds(message.deliveredTo, receiverId),
+        })),
+        chats: updateChatLastMessageByIds(get().chats, messageIds, (message) => ({
+          ...message,
+          deliveredTo: mergeUniqueIds(message.deliveredTo, receiverId),
+        })),
+      });
     });
     socket.on('friend:request:received', async ({ fromUser }) => {
       if (fromUser?._id) {

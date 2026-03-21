@@ -317,6 +317,28 @@ export const messageController = {
     try {
       const myId = req.user._id;
       const { id: userToChatId } = req.params;
+      const senderSocketId = getReceiverSocketId(userToChatId);
+
+      const undeliveredMessages = await Message.find({
+        senderId: userToChatId,
+        receiverId: myId,
+        deliveredTo: { $ne: myId },
+        deletedFor: { $ne: myId },
+      }).select('_id');
+
+      if (undeliveredMessages.length) {
+        await Message.updateMany(
+          { _id: { $in: undeliveredMessages.map((message) => message._id) } },
+          { $addToSet: { deliveredTo: myId } },
+        );
+
+        if (senderSocketId) {
+          io.to(senderSocketId).emit('messages:delivered', {
+            receiverId: myId.toString(),
+            messageIds: undeliveredMessages.map((message) => message._id.toString()),
+          });
+        }
+      }
 
       const messages = await Message.find({
         $and: [
@@ -396,10 +418,26 @@ export const messageController = {
       if (sharedContactId) await newMessage.populate('sharedContactId', 'username profilePicture email');
 
       const receiverSocketId = getReceiverSocketId(receiverId);
+      if (receiverSocketId) {
+        newMessage.deliveredTo = Array.from(
+          new Set([...(newMessage.deliveredTo || []).map((entry) => entry.toString()), receiverId.toString()]),
+        );
+        await newMessage.save();
+      }
+
       const serializedForReceiver = serializeMessageForViewer(newMessage, receiverId);
       const serializedForSender = serializeMessageForViewer(newMessage, senderId);
 
       if (receiverSocketId) io.to(receiverSocketId).emit('newMessage', serializedForReceiver);
+      if (receiverSocketId) {
+        const senderSocketId = getReceiverSocketId(senderId.toString());
+        if (senderSocketId) {
+          io.to(senderSocketId).emit('messages:delivered', {
+            receiverId: receiverId.toString(),
+            messageIds: [newMessage._id.toString()],
+          });
+        }
+      }
 
       const senderSocketId = getReceiverSocketId(senderId.toString());
       if (senderSocketId) io.to(senderSocketId).emit('chat:last-message', serializedForSender);

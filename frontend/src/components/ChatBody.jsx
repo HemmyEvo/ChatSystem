@@ -251,8 +251,7 @@ const MessageBubble = ({
   onOpenViewOnce,
   selectedUser,
   chatBubbleColors,
-  selectedMessages,
-  onlineUsers // NEW
+  selectedMessages
 }) => {
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -313,7 +312,7 @@ const MessageBubble = ({
 
   // Determine read/delivery status for this specific message
   const isRead = (message.readBy || []).includes(selectedUser?._id);
-  const isDelivered = (message.deliveredTo || []).includes(selectedUser?._id) || isRead || onlineUsers.includes(selectedUser?._id);
+  const isDelivered = (message.deliveredTo || []).includes(selectedUser?._id) || isRead;
 
   return (
     <div
@@ -437,7 +436,7 @@ const MessageBubble = ({
 };
 
 function ChatBody() {
-  const { authUser, onlineUsers } = useAuthStore();
+  const { authUser } = useAuthStore();
   const { 
     messages, selectedUser, subscribeToTypingEvents, unsubscribeFromTypingEvents, 
     isTyping, isMessagesLoading, toggleSelectedMessage, selectedMessages, 
@@ -537,7 +536,6 @@ function ChatBody() {
                     selectedUser={selectedUser}
                     chatBubbleColors={chatBubbleColors}
                     selectedMessages={selectedMessages}
-                    onlineUsers={onlineUsers} // NEW
                   />
                 </React.Fragment>
               );

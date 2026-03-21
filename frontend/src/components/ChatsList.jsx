@@ -5,6 +5,15 @@ import UsersLoadingSkeleton from "./UsersLoadingSkeleton";
 import NoChatsFound from "./NoChatsFound";
 import { useAuthStore } from "../store/useAuthStore.js";
 
+const formatLastSeen = (lastSeen) => {
+  if (!lastSeen) return "recently";
+  const date = new Date(lastSeen);
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true });
+  return sameDay ? `last seen today at ${time}` : `last seen ${date.toLocaleDateString([], { day: "numeric", month: "short" })} at ${time}`;
+};
+
 const getLastMessagePreview = (message) => {
   if (!message) return "No messages yet";
   if (message.viewOnce) {
@@ -32,7 +41,7 @@ const getLastMessageIcon = (message) => {
 
 function ChatsList() {
   const { getChats, chats, isUsersLoading, setSelectedUser, searchTerm, setSearchTerm, archivedChatIds, toggleArchiveChat, togglePinChat, pinnedChatIds, typingUsers, subscribeToNewMessages, subscribeToTypingEvents } = useChatStore();
-  const { onlineUsers, authUser } = useAuthStore();
+  const { onlineUsers, authUser, userLastSeenMap } = useAuthStore();
   const [showArchivedView, setShowArchivedView] = useState(false);
   const filteredChats = chats.filter((chat) => chat.username.toLowerCase().includes(searchTerm.toLowerCase()));
   const visibleChats = filteredChats.filter((chat) => !archivedChatIds.includes(chat._id)).sort((a, b) => { const aPinned = pinnedChatIds.includes(a._id); const bPinned = pinnedChatIds.includes(b._id); if (aPinned && !bPinned) return -1; if (!aPinned && bPinned) return 1; return 0; });
@@ -47,7 +56,9 @@ function ChatsList() {
     const lastMessage = chat.lastMessage;
     const isMyLastMessage = lastMessage?.senderId === authUser?._id;
     const isRead = isMyLastMessage && (lastMessage?.readBy || []).includes(chat._id);
+    const isDelivered = isMyLastMessage && ((lastMessage?.deliveredTo || []).includes(chat._id) || isRead);
     const isUserTyping = typingUsers[chat._id];
+    const lastSeen = userLastSeenMap[chat._id] || chat.lastSeen;
     return (
       <div key={chat._id} className="p-3 rounded-xl cursor-pointer hover:bg-slate-700/60 transition-colors border border-transparent hover:border-slate-600" onClick={() => setSelectedUser(chat)}>
         <div className="flex items-start gap-3">
@@ -55,7 +66,21 @@ function ChatsList() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between"><h4 className="text-slate-100 font-medium truncate">@{chat.username}</h4><span className="text-[11px] text-slate-400">{lastMessage?.createdAt && new Date(lastMessage.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
             <div className="flex items-center justify-between gap-2 mt-1">
-              <p className="text-slate-400 text-sm truncate flex items-center gap-1">{isUserTyping ? <span className="text-emerald-400 italic font-medium">@{chat.username} is typing...</span> : <>{isMyLastMessage ? (isRead ? <CheckCheck size={14} className="text-sky-400" /> : <Check size={14} className="text-slate-400" />) : null}{getLastMessageIcon(lastMessage)}{getLastMessagePreview(lastMessage)}</>}</p>
+              <p className="text-slate-400 text-sm truncate flex items-center gap-1">
+                {isUserTyping ? (
+                  <span className="text-emerald-400 italic font-medium">@{chat.username} is typing...</span>
+                ) : lastMessage ? (
+                  <>
+                    {isMyLastMessage ? (
+                      isRead ? <CheckCheck size={14} className="text-sky-400" /> : isDelivered ? <CheckCheck size={14} className="text-slate-400" /> : <Check size={14} className="text-slate-400" />
+                    ) : null}
+                    {getLastMessageIcon(lastMessage)}
+                    {getLastMessagePreview(lastMessage)}
+                  </>
+                ) : (
+                  <span className="truncate">{isOnline ? "online" : formatLastSeen(lastSeen)}</span>
+                )}
+              </p>
               <div className="flex items-center gap-2 shrink-0">
                 {chat.unreadCount > 0 && !isUserTyping && <span className="min-w-5 h-5 px-1 rounded-full bg-emerald-500 text-[10px] text-white grid place-items-center font-semibold">{chat.unreadCount > 99 ? "99+" : chat.unreadCount}</span>}
                 <button type="button" className={`p-1 rounded hover:bg-slate-600 ${pinnedChatIds.includes(chat._id) ? "text-amber-400" : "text-slate-500"}`} onClick={(e) => { e.stopPropagation(); togglePinChat(chat._id); }} title="Pin chat"><Pin size={14} /></button>

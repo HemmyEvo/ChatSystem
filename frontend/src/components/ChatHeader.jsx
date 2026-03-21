@@ -7,7 +7,11 @@ import { useCallStore } from '../store/useCallStore';
 
 const formatLastSeen = (lastSeen) => {
   if (!lastSeen) return 'recently';
-  return new Date(lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+  const date = new Date(lastSeen);
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+  return sameDay ? `last seen today at ${time}` : `last seen ${date.toLocaleDateString([], { day: 'numeric', month: 'short' })} at ${time}`;
 };
 
 const compressImage = (file, callback) => {
@@ -176,7 +180,7 @@ function ChatHeader() {
               <div className='flex flex-col items-start'>
                 <h4 className='text-slate-200 font-medium'>@{selectedUser?.username}</h4>
                 <p className='max-w-[180px] truncate text-xs text-slate-400'>
-                  {online ? 'online' : selectedUser?.bio || `last seen today at ${formatLastSeen(lastSeen)}`}
+                  {online ? 'online' : selectedUser?.bio ? `${selectedUser.bio} • ${formatLastSeen(lastSeen)}` : formatLastSeen(lastSeen)}
                 </p>
               </div>
             </div>

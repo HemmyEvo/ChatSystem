@@ -685,6 +685,8 @@ export default function GameLayer() {
           <div className="flex-1 overflow-auto">
             {activeGame.gameType === 'whot' ? (
               <NigerianWhotView game={activeGame} onPlayCard={handlePlayCard} onDraw={handleDrawCard} />
+            ) : activeGame.gameType === 'football' ? (
+              <NigerianFootballView game={activeGame} me={me} />
             ) : (
               <NigerianLudoBoard
                 game={activeGame}
