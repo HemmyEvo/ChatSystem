@@ -262,7 +262,7 @@ function IncomingCallView({ incomingCall, acceptCall, declineCall }) {
   );
 }
 
-function VoiceCallView({ activeCallUser, remoteStream, callStatus, isMuted, acceptCall, declineCall, endCall, toggleMute, incomingCall }) {
+function VoiceCallView({ activeCallUser, remoteStream, callStatus, isMuted, acceptCall, declineCall, endCall, toggleMute, incomingCall, onMinimize }) {
   const avatar = incomingCall?.fromUser?.profilePicture || activeCallUser?.profilePicture || '/avatar.png';
   const username = incomingCall?.fromUser?.username || activeCallUser?.username || 'user';
   const status = getStatusLabel({
@@ -279,7 +279,18 @@ function VoiceCallView({ activeCallUser, remoteStream, callStatus, isMuted, acce
       <CallBackdrop avatar={avatar} />
       <div className="relative flex min-h-[100dvh] flex-col items-center justify-between px-6 pb-10 pt-12 text-center">
         <div className="w-full">
-          <div className="text-sm font-medium text-white/72">End-to-end encrypted</div>
+          <div className="flex items-center justify-between gap-4">
+            <div className="text-sm font-medium text-white/72">End-to-end encrypted</div>
+            {!incomingCall && onMinimize && (
+              <button
+                type="button"
+                onClick={onMinimize}
+                className="rounded-full bg-white/10 px-4 py-2 text-xs text-white/88 transition hover:bg-white/15"
+              >
+                Back to chat
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-col items-center">
@@ -304,6 +315,48 @@ function VoiceCallView({ activeCallUser, remoteStream, callStatus, isMuted, acce
             <RoundControl onClick={endCall} icon={<PhoneOff size={24} />} label="End" tone="danger" size="lg" />
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function CompactVoiceCallWidget({ activeCallUser, remoteStream, callStatus, isMuted, toggleMute, endCall, onExpand }) {
+  const avatar = activeCallUser?.profilePicture || '/avatar.png';
+  const username = activeCallUser?.username || 'user';
+  const status = getStatusLabel({
+    incomingCall: null,
+    callStatus,
+    isVideoCall: false,
+    connectionQuality: 'connected',
+    remoteMediaState: {},
+  });
+
+  return (
+    <div className="fixed right-4 top-4 z-[95] w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#111b21]/95 text-white shadow-2xl backdrop-blur-xl">
+      <RemoteAudio stream={remoteStream} />
+      <button type="button" onClick={onExpand} className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-white/5">
+        <img src={avatar} alt={username} className="h-11 w-11 rounded-full object-cover" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-medium">{username}</div>
+          <div className="text-xs text-white/62">{status}</div>
+        </div>
+        <span className="text-[11px] text-[#7ae582]">Open</span>
+      </button>
+      <div className="flex items-center justify-end gap-2 border-t border-white/10 px-3 py-3">
+        <button
+          type="button"
+          onClick={toggleMute}
+          className={`rounded-full px-3 py-2 text-xs transition ${isMuted ? 'bg-white text-[#111b21]' : 'bg-white/10 text-white'}`}
+        >
+          {isMuted ? 'Unmute' : 'Mute'}
+        </button>
+        <button
+          type="button"
+          onClick={endCall}
+          className="rounded-full bg-[#e53935] px-4 py-2 text-xs text-white transition hover:bg-[#d32f2f]"
+        >
+          End
+        </button>
       </div>
     </div>
   );
@@ -339,6 +392,7 @@ function VideoCallView({
   clearDrawings,
   isAnnotating,
   setIsAnnotating,
+  onMinimize,
 }) {
   const authUser = useAuthStore((state) => state.authUser);
   const peerUser = incomingCall?.fromUser || activeCallUser;
@@ -385,6 +439,15 @@ function VideoCallView({
           </div>
 
           <div className="flex flex-col items-end gap-2">
+            {onMinimize && (
+              <button
+                type="button"
+                onClick={onMinimize}
+                className="rounded-full bg-black/32 px-4 py-2 text-xs text-white/88 backdrop-blur-md transition hover:bg-black/45"
+              >
+                Back to chat
+              </button>
+            )}
             <div className="h-32 w-24 overflow-hidden rounded-[1.1rem] border border-white/15 bg-[#111b21] shadow-2xl sm:h-40 sm:w-28">
               <VideoSurface
                 stream={previewStream}
@@ -506,8 +569,77 @@ function VideoCallView({
   );
 }
 
+function CompactVideoCallWidget({
+  activeCallUser,
+  remoteStream,
+  previewStream,
+  callStatus,
+  isMuted,
+  isCameraEnabled,
+  endCall,
+  toggleMute,
+  onExpand,
+}) {
+  const authUser = useAuthStore((state) => state.authUser);
+  const username = activeCallUser?.username || 'user';
+  const status = getStatusLabel({
+    incomingCall: null,
+    callStatus,
+    isVideoCall: true,
+    connectionQuality: 'connected',
+    remoteMediaState: {},
+  });
+
+  return (
+    <div className="fixed bottom-4 right-4 z-[95] w-[170px] overflow-hidden rounded-[1.3rem] border border-white/10 bg-[#111b21] text-white shadow-2xl">
+      <RemoteAudio stream={remoteStream} />
+      <button type="button" onClick={onExpand} className="relative block h-[220px] w-full text-left">
+        <VideoSurface
+          stream={remoteStream}
+          fallbackAvatar={activeCallUser?.profilePicture || '/avatar.png'}
+          title={username}
+          subtitle={status}
+          rounded="rounded-none"
+        />
+        <div className="absolute right-2 top-2 h-12 w-9 overflow-hidden rounded-[0.7rem] border border-white/20 bg-black/30 shadow-lg">
+          <VideoSurface
+            stream={previewStream}
+            fallbackAvatar={authUser?.profilePicture || '/avatar.png'}
+            title="You"
+            subtitle=""
+            muted
+            mirrored={isCameraEnabled}
+            rounded="rounded-none"
+          />
+        </div>
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-3 pb-3 pt-8">
+          <div className="truncate text-sm font-medium">{username}</div>
+          <div className="truncate text-[11px] text-white/68">{status}</div>
+        </div>
+      </button>
+      <div className="flex items-center justify-between gap-2 border-t border-white/10 px-2 py-2">
+        <button
+          type="button"
+          onClick={toggleMute}
+          className={`rounded-full px-3 py-1.5 text-[11px] transition ${isMuted ? 'bg-white text-[#111b21]' : 'bg-white/10 text-white'}`}
+        >
+          {isMuted ? 'Unmute' : 'Mute'}
+        </button>
+        <button
+          type="button"
+          onClick={endCall}
+          className="rounded-full bg-[#e53935] px-3 py-1.5 text-[11px] text-white transition hover:bg-[#d32f2f]"
+        >
+          End
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function CallLayer() {
   const [isAnnotating, setIsAnnotating] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const {
     incomingCall,
     activeCallUser,
@@ -554,6 +686,18 @@ function CallLayer() {
     };
   }, [incomingCall, ringtone]);
 
+  useEffect(() => {
+    if (incomingCall) {
+      setIsExpanded(true);
+      return;
+    }
+    if (activeCallUser?._id) {
+      setIsExpanded(false);
+      return;
+    }
+    setIsExpanded(false);
+  }, [activeCallUser?._id, incomingCall]);
+
   const effectiveMode = incomingCall?.media?.video ? 'video' : activeCallUser ? callMode : 'voice';
   const isVideoCall = effectiveMode === 'video';
 
@@ -595,6 +739,22 @@ function CallLayer() {
   }
 
   if (!isVideoCall) {
+    if (!isExpanded) {
+      return (
+        <>
+          <CompactVoiceCallWidget
+            activeCallUser={activeCallUser}
+            remoteStream={remoteStream}
+            callStatus={callStatus}
+            isMuted={isMuted}
+            toggleMute={toggleMute}
+            endCall={endCall}
+            onExpand={() => setIsExpanded(true)}
+          />
+          <MissedCallsPanel missedCalls={missedCalls} clearMissedCalls={clearMissedCalls} />
+        </>
+      );
+    }
     return (
       <>
         <VoiceCallView
@@ -607,6 +767,7 @@ function CallLayer() {
           declineCall={declineCall}
           endCall={endCall}
           toggleMute={toggleMute}
+          onMinimize={() => setIsExpanded(false)}
         />
         <MissedCallsPanel missedCalls={missedCalls} clearMissedCalls={clearMissedCalls} />
       </>
@@ -615,37 +776,52 @@ function CallLayer() {
 
   return (
     <>
-      <VideoCallView
-        incomingCall={incomingCall}
-        activeCallUser={activeCallUser}
-        remoteStream={remoteStream}
-        previewStream={previewStream}
-        callStatus={callStatus}
-        isMuted={isMuted}
-        isCameraEnabled={isCameraEnabled}
-        isScreenSharing={isScreenSharing}
-        isRecording={isRecording}
-        recordingSeconds={recordingSeconds}
-        recordingUrl={recordingUrl}
-        remoteMediaState={mergedRemoteState}
-        remoteLocation={remoteLocation}
-        collaborativePaths={collaborativePaths}
-        localDrawStroke={localDrawStroke}
-        acceptCall={acceptCall}
-        declineCall={declineCall}
-        endCall={endCall}
-        toggleMute={toggleMute}
-        toggleCamera={toggleCamera}
-        toggleScreenShare={toggleScreenShare}
-        toggleRecording={toggleRecording}
-        shareLocationInCall={shareLocationInCall}
-        startStroke={startStroke}
-        extendStroke={extendStroke}
-        finishStroke={finishStroke}
-        clearDrawings={clearDrawings}
-        isAnnotating={isAnnotating}
-        setIsAnnotating={setIsAnnotating}
-      />
+      {isExpanded ? (
+        <VideoCallView
+          incomingCall={incomingCall}
+          activeCallUser={activeCallUser}
+          remoteStream={remoteStream}
+          previewStream={previewStream}
+          callStatus={callStatus}
+          isMuted={isMuted}
+          isCameraEnabled={isCameraEnabled}
+          isScreenSharing={isScreenSharing}
+          isRecording={isRecording}
+          recordingSeconds={recordingSeconds}
+          recordingUrl={recordingUrl}
+          remoteMediaState={mergedRemoteState}
+          remoteLocation={remoteLocation}
+          collaborativePaths={collaborativePaths}
+          localDrawStroke={localDrawStroke}
+          acceptCall={acceptCall}
+          declineCall={declineCall}
+          endCall={endCall}
+          toggleMute={toggleMute}
+          toggleCamera={toggleCamera}
+          toggleScreenShare={toggleScreenShare}
+          toggleRecording={toggleRecording}
+          shareLocationInCall={shareLocationInCall}
+          startStroke={startStroke}
+          extendStroke={extendStroke}
+          finishStroke={finishStroke}
+          clearDrawings={clearDrawings}
+          isAnnotating={isAnnotating}
+          setIsAnnotating={setIsAnnotating}
+          onMinimize={() => setIsExpanded(false)}
+        />
+      ) : (
+        <CompactVideoCallWidget
+          activeCallUser={activeCallUser}
+          remoteStream={remoteStream}
+          previewStream={previewStream}
+          callStatus={callStatus}
+          isMuted={isMuted}
+          isCameraEnabled={isCameraEnabled}
+          endCall={endCall}
+          toggleMute={toggleMute}
+          onExpand={() => setIsExpanded(true)}
+        />
+      )}
       <MissedCallsPanel missedCalls={missedCalls} clearMissedCalls={clearMissedCalls} />
     </>
   );
