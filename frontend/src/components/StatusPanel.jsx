@@ -5,7 +5,7 @@ import { useChatStore } from '../store/useChatStore';
 import { useAuthStore } from '../store/useAuthStore';
 
 const TEXT_BACKGROUNDS = ['#0b141a', '#202c33', '#103629', '#4a2040', '#40220f', '#1b3c59'];
-const STATUS_REACTIONS = ['❤️', '😂', '😍', '🔥', '👏', '😮'];
+const STATUS_REACTIONS = ['\u2764\uFE0F', '\u{1F602}', '\u{1F60D}', '\u{1F525}', '\u{1F62E}', '\u{1F622}'];
 
 const getRelativeLabel = (dateString) => {
   if (!dateString) return 'Just now';
@@ -16,6 +16,9 @@ const getRelativeLabel = (dateString) => {
   if (hours < 24) return `${hours}h ago`;
   return 'Yesterday';
 };
+
+const getReactionForUser = (status, userId) =>
+  (status?.reactions || []).find((reaction) => String(reaction.userId) === String(userId))?.emoji || null;
 
 const StatusRing = ({ seen, children }) => (
   <div className={`rounded-full p-[3px] ${seen ? 'bg-[#374248]' : 'bg-[linear-gradient(180deg,#25d366,#00a884)]'}`}>
@@ -192,6 +195,7 @@ function StatusViewer({ groups, activeGroupIndex, activeStatusIndex, onClose, on
   const activeGroup = groups[activeGroupIndex];
   const activeStatus = activeGroup?.statuses?.[activeStatusIndex];
   const isOwnStatus = activeGroup?._id === authUser?._id;
+  const activeReaction = getReactionForUser(activeStatus, authUser?._id);
 
   useEffect(() => {
     if (!activeStatus || !activeGroup) return undefined;
@@ -221,6 +225,11 @@ function StatusViewer({ groups, activeGroupIndex, activeStatusIndex, onClose, on
           <img src={activeStatus.mediaUrl} alt={activeGroup.username} className="h-full w-full object-contain" />
         )}
       </div>
+
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/60 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-black/75 to-transparent" />
+      <div className="pointer-events-none absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-black/35 to-transparent sm:w-24" />
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-16 bg-gradient-to-l from-black/35 to-transparent sm:w-24" />
 
       <div className="relative flex h-full flex-col justify-between p-4 sm:p-6">
         <div>
@@ -252,44 +261,43 @@ function StatusViewer({ groups, activeGroupIndex, activeStatusIndex, onClose, on
           <button aria-label="Next status" type="button" className="h-full w-full" onClick={onNext} />
         </div>
 
-        <div className="relative z-10 flex items-center justify-between gap-3">
+        <div className="relative z-10 flex items-end gap-3">
           {isOwnStatus ? (
             <button
               type="button"
               onClick={() => setShowViewerSheet((value) => !value)}
-              className="inline-flex items-center gap-2 rounded-full bg-black/35 px-4 py-2 text-sm text-white backdrop-blur-md"
+              className="inline-flex items-center gap-2 rounded-full bg-black/40 px-4 py-2 text-sm text-white backdrop-blur-md"
             >
               <Eye size={16} /> {activeStatus.viewersCount} viewers <ChevronUp size={16} />
             </button>
           ) : (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full bg-black/40 px-2 py-2 backdrop-blur-md sm:max-w-[34rem]">
               {STATUS_REACTIONS.map((emoji) => (
                 <button
                   key={emoji}
                   type="button"
                   onClick={() => reactToStatus(activeStatus._id, emoji)}
-                  className="rounded-full bg-black/35 px-3 py-2 text-lg backdrop-blur-md transition hover:bg-black/50"
+                  className={`grid h-11 w-11 shrink-0 place-items-center rounded-full text-[1.35rem] transition ${activeReaction === emoji ? 'bg-white/20 ring-1 ring-white/45' : 'hover:bg-white/10'}`}
                 >
                   {emoji}
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => reactToStatus(activeStatus._id, null)}
+                className="ml-auto inline-flex min-w-0 items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm text-white/90 transition hover:bg-white/15"
+              >
+                <Smile size={16} />
+                <span className="truncate">{activeReaction ? `Reacted ${activeReaction}` : 'Tap to react'}</span>
+              </button>
             </div>
-          )}
-
-          {!isOwnStatus && (
-            <button
-              type="button"
-              onClick={() => reactToStatus(activeStatus._id, null)}
-              className="inline-flex items-center gap-2 rounded-full bg-black/35 px-4 py-2 text-sm text-white backdrop-blur-md"
-            >
-              <Smile size={16} /> React
-            </button>
           )}
         </div>
       </div>
 
       {isOwnStatus && showViewerSheet && (
-        <div className="absolute inset-x-0 bottom-0 z-20 rounded-t-[1.8rem] bg-[#111b21] p-5 shadow-2xl">
+        <div className="absolute inset-x-0 bottom-0 z-20 rounded-t-[1.8rem] bg-[#111b21] p-5 shadow-2xl sm:left-1/2 sm:max-w-xl sm:-translate-x-1/2">
+          <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-white/20" />
           <div className="mb-4 flex items-center justify-between">
             <div>
               <div className="text-base font-medium">Status activity</div>
@@ -318,12 +326,15 @@ function StatusViewer({ groups, activeGroupIndex, activeStatusIndex, onClose, on
 
           <div>
             <div className="mb-2 text-xs uppercase tracking-[0.2em] text-white/40">Viewers</div>
-            <div className="max-h-56 space-y-2 overflow-y-auto">
+            <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
               {(activeStatus.viewers || []).length ? (
                 activeStatus.viewers.map((viewer) => (
-                  <div key={viewer._id} className="flex items-center gap-3 rounded-2xl bg-white/5 px-3 py-2">
+                  <div key={viewer._id} className="flex items-center gap-3 rounded-2xl bg-white/5 px-3 py-2.5">
                     <img src={viewer.profilePicture || '/avatar.png'} alt={viewer.username} className="h-10 w-10 rounded-full object-cover" />
-                    <div className="font-medium">{viewer.username || 'user'}</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium">{viewer.username || 'user'}</div>
+                      <div className="text-sm text-white/50">Viewed your status</div>
+                    </div>
                   </div>
                 ))
               ) : (
@@ -395,10 +406,10 @@ function StatusPanel({ compact = false, onOpenChatWithUser = null }) {
 
   return (
     <>
-      <div className={`space-y-4 ${compact ? '' : ''}`}>
+      <div className="space-y-4">
         {!compact && (
           <div className="px-2">
-            <h2 className="text-[1.7rem] font-semibold text-white">Updates</h2>
+            <h2 className="text-[1.7rem] font-semibold text-white">Status</h2>
           </div>
         )}
 
@@ -449,7 +460,7 @@ function StatusPanel({ compact = false, onOpenChatWithUser = null }) {
         </div>
 
         <div className="rounded-[1.4rem] bg-[#111b21] p-4 text-white shadow-sm">
-          <div className="mb-3 text-xs font-medium uppercase tracking-[0.22em] text-white/45">{compact ? 'Status' : 'Recent updates'}</div>
+          <div className="mb-3 text-xs font-medium uppercase tracking-[0.22em] text-white/45">{compact ? 'Recent' : 'Recent updates'}</div>
 
           {isStatusesLoading ? (
             <div className="space-y-3">
