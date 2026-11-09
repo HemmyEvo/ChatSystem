@@ -1,28 +1,24 @@
 import crypto from 'crypto';
 import { Server } from 'socket.io';
 import http from 'http';
-import express from 'express';
-import dotenv from 'dotenv';
+import app from '../app.js';
 import { socketAuthmiddleware } from './utlis.js';
 import User from '../models/User.js';
 import Message from '../models/Message.js';
 import { applyGameAction, clearInvite, createInvite, createSession, forfeitSession, getActiveSessionByPlayer, getInvite, getPlayerState } from './gameEngine.js';
+import { getReceiverSocketId, setSocketIO, userSocketMap } from './socketState.js';
 
-dotenv.config();
-
-const app = express();
 const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL,
+    origin: process.env.CLIENT_URL || 'http://localhost:5173',
     credentials: true,
   },
 });
 
 io.use(socketAuthmiddleware);
-
-const userSocketMap = {};
+setSocketIO(io);
 
 
 const callSessionMap = new Map();
@@ -125,10 +121,6 @@ const tryRenegotiateCall = (session) => {
   session.status = 'active';
   io.to(callerSocketId).emit('call:renegotiate', { toUserId: session.calleeId, media: session.media, sessionId: session.id });
 };
-
-export function getReceiverSocketId(userId) {
-  return userSocketMap[userId?.toString()];
-}
 
 const emitGameState = (session) => {
   session.players.forEach((playerId) => {
@@ -551,4 +543,4 @@ io.on('connection', async (socket) => {
   });
 });
 
-export { server, io, app };
+export { server, io, app, getReceiverSocketId };

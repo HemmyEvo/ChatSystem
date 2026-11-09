@@ -154,10 +154,11 @@ export const authController = {
     },
 
     logout: (_, res) => {
+        const sameSite = process.env.COOKIE_SAME_SITE || (process.env.NODE_ENV === 'production' ? 'none' : 'strict');
         const clearOptions = {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
+            secure: process.env.NODE_ENV === 'production' || sameSite === 'none',
+            sameSite,
             path: '/',
         };
 

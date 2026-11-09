@@ -1,16 +1,18 @@
-# React + Vite
+# ChatSystem deployment
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## Local development
 
-Currently, two official plugins are available:
+1. Copy `frontend/.env.example` to `frontend/.env` and `backend/.env.example` to `backend/.env`.
+2. Fill in the MongoDB, JWT, Cloudinary, and Arcjet settings in `backend/.env`.
+3. Start the backend with `npm run dev` from `backend/`, then start the frontend with `npm run dev` from `frontend/`.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Deploy to Vercel
 
-## React Compiler
+Create two Vercel projects from this repository:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Frontend:** set the Root Directory to `frontend`, with `npm run build` as the build command and `dist` as the output directory. Set `VITE_API_URL` to the backend's full API URL (for example, `https://your-api.vercel.app/api`). Set `VITE_SOCKET_URL` to the URL of the persistent Socket.IO server.
+- **Backend:** set the Root Directory to `backend`. The `api/index.js` function serves the REST API under `/api/*`. Add the backend variables from `backend/.env.example` in Vercel's project settings. Use the frontend's exact deployed origin for `CLIENT_URL`, set `NODE_ENV=production`, and use `COOKIE_SAME_SITE=none` when the frontend and API are on different sites. `JWT_SECRET` must be a long, unique secret.
 
-## Expanding the ESLint configuration
+Vercel's serverless function serves the REST API; it does not start the Socket.IO listener. Presence, messaging events, calls, and game events therefore require a separate persistent Node.js host for the existing Socket.IO server. Set `VITE_SOCKET_URL` to that server's public URL and configure its `CLIENT_URL`, `MONGODB_URI`, and `JWT_SECRET` consistently with the REST backend.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+For production authentication cookies, use HTTPS. A custom frontend and API domain under the same site is preferable; browsers may block cross-site cookies between unrelated hosting domains even when `SameSite=None` is set. Never put backend secrets in `VITE_*` variables.

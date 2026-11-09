@@ -3,7 +3,8 @@ import { api } from '../lib/axios.js';
 import toast from 'react-hot-toast';
 import { io } from 'socket.io-client';
 
-const Base_URL = import.meta.env.MODE === 'production' ? '/' : 'http://localhost:3000';
+const apiUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:3000/api');
+const socketUrl = import.meta.env.VITE_SOCKET_URL || new URL(apiUrl, window.location.origin).origin;
 
 export const useAuthStore = create((set, get) => ({
   authUser: null,
@@ -99,7 +100,7 @@ export const useAuthStore = create((set, get) => ({
   connectSocket: () => {
     const { authUser } = get();
     if (!authUser || get().socket?.connected) return;
-    const socket = io(Base_URL, { withCredentials: true, transports: ['websocket'] });
+    const socket = io(socketUrl, { withCredentials: true, transports: ['websocket'] });
     socket.connect();
 
     socket.on('presence:update', ({ onlineUsers }) => {
