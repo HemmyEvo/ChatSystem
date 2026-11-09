@@ -268,7 +268,7 @@ io.on('connection', async (socket) => {
   });
 
   socket.on('game:invite', ({ toUserId, gameType }) => {
-    if (!toUserId || !['whot', 'ludo', 'football', 'tictactoe', 'connect4'].includes(gameType)) return;
+    if (!toUserId || !['whot', 'ludo', 'tictactoe', 'connect4'].includes(gameType)) return;
 
     const senderSession = getActiveSessionByPlayer(userId);
     if (senderSession) {

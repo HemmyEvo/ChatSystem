@@ -47,7 +47,7 @@ const STICKER_TABS = [
 ];
 
 const buildEmojiSticker = (emoji) => {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><rect width="100%" height="100%" rx="80" fill="#202c33"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-size="220">${emoji}</text></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-size="300">${emoji}</text></svg>`;
   return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
 };
 
@@ -78,6 +78,7 @@ function ChatFooter() {
   const {
     selectedUser,
     friends,
+    chats,
     getFriends,
     shareContactSearchTerm,
     setShareContactSearchTerm,
@@ -297,25 +298,35 @@ function ChatFooter() {
     );
   };
 
-  const filteredFriends = friends.filter((friend) => friend.username.toLowerCase().includes(shareContactSearchTerm.toLowerCase()));
+  const friendsInChats = new Set(chats.map((chat) => chat._id?.toString()));
+  const filteredFriends = friends.filter((friend) =>
+    friend._id?.toString() !== selectedUser?._id?.toString()
+    && !friendsInChats.has(friend._id?.toString())
+    && friend.username.toLowerCase().includes(shareContactSearchTerm.toLowerCase()));
 
   const handleShareContact = async (contact) => {
-    await sendMessage({ sharedContactId: contact._id });
-    playSound(messageSendSound);
-    setShowContactModal(false);
-    setShowAttachMenu(false);
-    setShareContactSearchTerm('');
+    try {
+      await sendMessage({ sharedContactId: contact._id });
+      playSound(messageSendSound);
+      setShowContactModal(false);
+      setShowAttachMenu(false);
+      setShareContactSearchTerm('');
+    } catch (error) {
+      console.error('Error sharing contact:', error);
+      toast.error(error.response?.data?.message || 'Failed to share contact');
+    }
   };
 
   const sendStickerPayload = async (stickerValue) => {
-    await sendMessage({ sticker: stickerValue });
-    addRecentSticker(stickerValue);
-    playSound(messageSendSound);
-    setShowStickerMenu(false);
-  };
-
-  const handleSendEmojiSticker = async (emoji) => {
-    await sendStickerPayload(buildEmojiSticker(emoji));
+    try {
+      await sendMessage({ sticker: stickerValue });
+      addRecentSticker(stickerValue);
+      playSound(messageSendSound);
+      setShowStickerMenu(false);
+    } catch (error) {
+      console.error('Error sending sticker:', error);
+      toast.error(error.response?.data?.message || 'Failed to send sticker');
+    }
   };
 
   const handleSendSavedSticker = async (stickerValue) => {
@@ -333,13 +344,13 @@ function ChatFooter() {
 
   const renderStickerButton = (stickerValue, index) => {
     const isFavorite = favoriteStickers.includes(stickerValue);
-    const isEmojiSticker = stickerValue.startsWith('data:image/svg+xml');
 
     return (
       <div key={`${stickerValue.slice(0, 24)}-${index}`} className="relative">
         <button
           type="button"
-          onClick={() => (isEmojiSticker ? handleSendSavedSticker(stickerValue) : handleSendSavedSticker(stickerValue))}
+          onClick={() => handleSendSavedSticker(stickerValue)}
+          aria-label="Send sticker"
           className="flex h-16 w-full items-center justify-center rounded-2xl bg-slate-700/60 p-2 transition hover:bg-slate-600"
         >
           <img src={stickerValue} alt="Sticker" className="h-full w-full object-contain" />
@@ -359,7 +370,7 @@ function ChatFooter() {
   };
 
   return (
-    <div className="relative w-full box-border bg-slate-800 p-3 sm:p-4">
+    <div className="chat-composer relative w-full box-border bg-slate-800 p-3 sm:p-4">
       {isInteractionBlocked && (
         <div className="mb-3 rounded-xl border border-amber-400/20 bg-amber-400/10 px-4 py-2 text-center text-sm text-amber-100">
           {selectedUser.isBlockedByMe ? 'You blocked this contact. Unblock them to send messages or call.' : 'This contact has blocked messaging and calls.'}
@@ -430,7 +441,7 @@ function ChatFooter() {
             <Sticker size={20} />
           </button>
 
-          <div className={`absolute bottom-12 left-0 z-50 w-[320px] rounded-[1.4rem] bg-[#233138] p-3 shadow-xl transition-all duration-200 sm:w-[360px] ${showStickerMenu ? 'scale-100 opacity-100' : 'pointer-events-none scale-95 opacity-0'}`}>
+          <div className={`sticker-picker absolute bottom-12 left-0 z-50 w-[320px] rounded-[1.4rem] bg-[#233138] p-3 shadow-xl transition-all duration-200 sm:w-[360px] ${showStickerMenu ? 'scale-100 opacity-100' : 'pointer-events-none scale-95 opacity-0'}`}>
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <div className="text-sm font-semibold text-white">Stickers</div>
@@ -455,21 +466,6 @@ function ChatFooter() {
                 </button>
               ))}
             </div>
-
-            {stickerTab === 'all' && (
-              <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
-                {DEFAULT_STICKERS.map((emoji) => (
-                  <button
-                    key={emoji}
-                    type="button"
-                    onClick={() => handleSendEmojiSticker(emoji)}
-                    className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-slate-700/60 text-2xl transition hover:bg-slate-600"
-                  >
-                    {emoji}
-                  </button>
-                ))}
-              </div>
-            )}
 
             {currentStickerSet.length ? (
               <div className="grid max-h-[280px] grid-cols-4 gap-2 overflow-y-auto pr-1">
@@ -536,7 +532,7 @@ function ChatFooter() {
 
       {showContactModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4">
-          <div className="flex max-h-[80vh] w-full max-w-sm flex-col overflow-hidden rounded-xl bg-slate-800">
+          <div className="share-contact-dialog flex max-h-[80vh] w-full max-w-sm flex-col overflow-hidden rounded-xl bg-slate-800">
             <div className="flex items-center justify-between border-b border-slate-700 p-4 text-white">
               <h3 className="font-bold">Share friend</h3>
               <button onClick={() => setShowContactModal(false)}><X size={20} /></button>
@@ -558,7 +554,7 @@ function ChatFooter() {
                       <span className="font-medium text-white">@{contact.username}</span>
                     </button>
                   ))}
-                  {filteredFriends.length === 0 && <p className="text-center text-slate-400">No friends found.</p>}
+                  {filteredFriends.length === 0 && <p className="text-center text-slate-400">No new contacts to share. Friends you already chat with are hidden.</p>}
                 </div>
               )}
             </div>

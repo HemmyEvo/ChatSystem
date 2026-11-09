@@ -106,6 +106,7 @@ export const useChatStore = create((set, get) => ({
   isTyping: false,
   typingUsers: {},
   showForwardModal: false,
+  theme: localStorage.getItem("chatTheme") === "dark" ? "dark" : "light",
 
   archivedChatIds: JSON.parse(localStorage.getItem("archivedChatIds") || "[]"),
   pinnedChatIds: JSON.parse(localStorage.getItem("pinnedChatIds") || "[]"),
@@ -165,6 +166,11 @@ export const useChatStore = create((set, get) => ({
   setPeopleSearchTerm: (value) => set({ peopleSearchTerm: value }),
   setShareContactSearchTerm: (value) => set({ shareContactSearchTerm: value }),
   setActiveTab: (tab) => set({ activeTab: tab }),
+  toggleTheme: () => {
+    const theme = get().theme === "light" ? "dark" : "light";
+    localStorage.setItem("chatTheme", theme);
+    set({ theme });
+  },
   setReplyTarget: (msg) => set({ replyTarget: msg }),
   clearSelectedMessages: () => set({ selectedMessages: [], showForwardModal: false }),
   toggleSelectedMessage: (msgId) => set({ selectedMessages: get().selectedMessages.includes(msgId) ? get().selectedMessages.filter((id) => id !== msgId) : [...get().selectedMessages, msgId] }),

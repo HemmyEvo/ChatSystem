@@ -1,53 +1,88 @@
-import { useState, useEffect } from "react";
-import { Check, CheckCheck, Mic, Image as ImageIcon, Video, Archive, ArchiveRestore, Pin, Search, ArrowLeft } from "lucide-react";
-import { useChatStore } from "../store/useChatStore";
-import UsersLoadingSkeleton from "./UsersLoadingSkeleton";
-import NoChatsFound from "./NoChatsFound";
-import { useAuthStore } from "../store/useAuthStore.js";
-
-const formatLastSeen = (lastSeen) => {
-  if (!lastSeen) return "recently";
-  const date = new Date(lastSeen);
-  const now = new Date();
-  const sameDay = date.toDateString() === now.toDateString();
-  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true });
-  return sameDay ? `last seen today at ${time}` : `last seen ${date.toLocaleDateString([], { day: "numeric", month: "short" })} at ${time}`;
-};
+import { useEffect, useState } from 'react';
+import {
+  Archive,
+  ArchiveRestore,
+  Check,
+  CheckCheck,
+  Image as ImageIcon,
+  Mic,
+  Pin,
+  Search,
+  Video,
+  ArrowLeft,
+} from 'lucide-react';
+import { useChatStore } from '../store/useChatStore';
+import UsersLoadingSkeleton from './UsersLoadingSkeleton';
+import NoChatsFound from './NoChatsFound';
+import { useAuthStore } from '../store/useAuthStore.js';
 
 const getLastMessagePreview = (message) => {
-  if (!message) return "No messages yet";
+  if (!message) return 'Start a conversation';
   if (message.viewOnce) {
-    if (message.viewOnceOpened || message.viewOnceOpenedByPeer) return "Opened view once media";
-    if (message.image) return "View once photo";
-    if (message.video) return "View once video";
-    return "View once media";
+    if (message.viewOnceOpened || message.viewOnceOpenedByPeer) return 'Opened view-once media';
+    return message.image ? 'View-once photo' : message.video ? 'View-once video' : 'View-once media';
   }
-  if (message.sticker) return "Sticker";
+  if (message.sticker) return 'Sent a sticker';
   if (message.text) return message.text;
-  if (message.audio) return "Voice message";
-  if (message.image) return "Photo";
-  if (message.video) return "Video";
-  if (message.document) return "Document";
-  return "Media message";
+  if (message.audio) return 'Voice message';
+  if (message.image) return 'Photo';
+  if (message.video) return 'Video';
+  if (message.document) return 'Document';
+  if (message.sharedContactId) return 'Shared a contact';
+  return 'Shared a message';
 };
+
 const getLastMessageIcon = (message) => {
-  if (!message) return null;
-  if (message.sticker) return null;
-  if (message.audio) return <Mic size={13} className="text-slate-400" />;
-  if (message.image) return <ImageIcon size={13} className="text-slate-400" />;
-  if (message.video) return <Video size={13} className="text-slate-400" />;
+  if (message?.audio) return <Mic size={14} />;
+  if (message?.image) return <ImageIcon size={14} />;
+  if (message?.video) return <Video size={14} />;
   return null;
 };
 
+const getLastSeenLabel = (lastSeen) => {
+  if (!lastSeen) return 'Start a conversation';
+  const date = new Date(lastSeen);
+  if (Number.isNaN(date.getTime())) return 'Start a conversation';
+  if (date.toDateString() === new Date().toDateString()) {
+    return `Last seen ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  }
+  return `Last seen ${date.toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
+};
+
 function ChatsList() {
-  const { getChats, chats, isUsersLoading, setSelectedUser, selectedUser, searchTerm, setSearchTerm, archivedChatIds, toggleArchiveChat, togglePinChat, pinnedChatIds, typingUsers, subscribeToNewMessages, subscribeToTypingEvents } = useChatStore();
+  const {
+    getChats,
+    chats,
+    isUsersLoading,
+    setSelectedUser,
+    selectedUser,
+    searchTerm,
+    setSearchTerm,
+    archivedChatIds,
+    toggleArchiveChat,
+    togglePinChat,
+    pinnedChatIds,
+    typingUsers,
+    subscribeToNewMessages,
+    subscribeToTypingEvents,
+  } = useChatStore();
   const { onlineUsers, authUser, userLastSeenMap } = useAuthStore();
   const [showArchivedView, setShowArchivedView] = useState(false);
+
+  useEffect(() => {
+    getChats();
+    subscribeToNewMessages();
+    subscribeToTypingEvents();
+  }, [getChats, subscribeToNewMessages, subscribeToTypingEvents]);
+
   const filteredChats = chats.filter((chat) => chat.username.toLowerCase().includes(searchTerm.toLowerCase()));
-  const visibleChats = filteredChats.filter((chat) => !archivedChatIds.includes(chat._id)).sort((a, b) => { const aPinned = pinnedChatIds.includes(a._id); const bPinned = pinnedChatIds.includes(b._id); if (aPinned && !bPinned) return -1; if (!aPinned && bPinned) return 1; return 0; });
+  const visibleChats = filteredChats.filter((chat) => !archivedChatIds.includes(chat._id)).sort((a, b) => {
+    const aPinned = pinnedChatIds.includes(a._id);
+    const bPinned = pinnedChatIds.includes(b._id);
+    return Number(bPinned) - Number(aPinned);
+  });
   const archivedChats = filteredChats.filter((chat) => archivedChatIds.includes(chat._id));
 
-  useEffect(() => { getChats(); subscribeToNewMessages(); subscribeToTypingEvents(); }, [getChats, subscribeToNewMessages, subscribeToTypingEvents]);
   if (isUsersLoading) return <UsersLoadingSkeleton />;
   if (chats.length === 0) return <NoChatsFound />;
 
@@ -57,43 +92,125 @@ function ChatsList() {
     const isMyLastMessage = lastMessage?.senderId?.toString() === authUser?._id?.toString();
     const isRead = isMyLastMessage && (lastMessage?.readBy || []).some((id) => id?.toString() === chat._id);
     const isDelivered = isMyLastMessage && ((lastMessage?.deliveredTo || []).some((id) => id?.toString() === chat._id) || isRead);
-    const isUserTyping = typingUsers[chat._id];
-    const lastSeen = userLastSeenMap[chat._id] || chat.lastSeen;
+    const preview = typingUsers[chat._id]
+      ? 'Typing…'
+      : lastMessage
+        ? getLastMessagePreview(lastMessage)
+        : isOnline
+          ? 'Online now'
+          : getLastSeenLabel(userLastSeenMap[chat._id] || chat.lastSeen);
+    const date = lastMessage?.createdAt ? new Date(lastMessage.createdAt) : null;
+    const isSelected = selectedUser?._id === chat._id;
+
     return (
-      <div key={chat._id} className={`p-3 rounded-xl cursor-pointer transition-colors border ${selectedUser?._id === chat._id ? 'bg-slate-700/70 border-emerald-500/30' : 'border-transparent hover:bg-slate-700/60 hover:border-slate-600'}`} onClick={() => setSelectedUser(chat)}>
-        <div className="flex items-start gap-3">
-          <div className={`avatar ${isOnline ? "online" : "offline"}`}><div className="size-10 rounded-full"><img src={chat.profilePicture || "/avatar.png"} alt={chat.username} /></div></div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between"><h4 className="text-slate-100 font-medium truncate">@{chat.username}</h4><span className="text-[11px] text-slate-400">{lastMessage?.createdAt && new Date(lastMessage.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
-            <div className="flex items-center justify-between gap-2 mt-1">
-              <p className="text-slate-400 text-sm truncate flex items-center gap-1">
-                {isUserTyping ? (
-                  <span className="text-emerald-400 italic font-medium">@{chat.username} is typing...</span>
-                ) : lastMessage ? (
-                  <>
-                    {isMyLastMessage ? (
-                      isRead ? <CheckCheck size={14} className="text-sky-400" /> : isDelivered ? <CheckCheck size={14} className="text-slate-400" /> : <Check size={14} className="text-slate-400" />
-                    ) : null}
-                    {getLastMessageIcon(lastMessage)}
-                    {getLastMessagePreview(lastMessage)}
-                  </>
-                ) : (
-                  <span className="truncate">{isOnline ? "online" : formatLastSeen(lastSeen)}</span>
-                )}
-              </p>
-              <div className="flex items-center gap-2 shrink-0">
-                {chat.unreadCount > 0 && <span aria-label={`${chat.unreadCount} unread messages`} className="min-w-5 h-5 px-1 rounded-full bg-emerald-500 text-[10px] text-white grid place-items-center font-semibold">{chat.unreadCount > 99 ? "99+" : chat.unreadCount}</span>}
-                <button type="button" className={`p-1 rounded hover:bg-slate-600 ${pinnedChatIds.includes(chat._id) ? "text-amber-400" : "text-slate-500"}`} onClick={(e) => { e.stopPropagation(); togglePinChat(chat._id); }} title="Pin chat"><Pin size={14} /></button>
-                <button type="button" className="p-1 rounded hover:bg-slate-600 text-slate-500" onClick={(e) => { e.stopPropagation(); toggleArchiveChat(chat._id); if (showArchivedView && archivedChats.length === 1 && archivedChatIds.includes(chat._id)) { setShowArchivedView(false); } }} title="Archive chat">{archivedChatIds.includes(chat._id) ? <ArchiveRestore size={14} /> : <Archive size={14} />}</button>
-              </div>
-            </div>
-          </div>
-        </div>
+      <div
+        key={chat._id}
+        className={`conversation-row ${isSelected ? 'conversation-row--selected' : ''}`}
+        role="button"
+        tabIndex={0}
+        onClick={() => setSelectedUser(chat)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setSelectedUser(chat);
+          }
+        }}
+        aria-current={isSelected ? 'true' : undefined}
+      >
+        <span className="relative shrink-0">
+          <img className="conversation-avatar" src={chat.profilePicture || '/avatar.png'} alt="" />
+          {isOnline && <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-[var(--panel)] bg-[var(--accent)]" />}
+        </span>
+        <span className="conversation-copy">
+          <span className="conversation-titleline">
+            <span className="conversation-title">@{chat.username}</span>
+            <span className="conversation-time">
+              {date?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          </span>
+          <span className="conversation-previewline">
+            <span className={`conversation-preview ${typingUsers[chat._id] ? 'text-emerald-700 dark:text-emerald-300' : ''}`}>
+              {isMyLastMessage && (isRead
+                ? <CheckCheck className="mr-1 inline text-emerald-600" size={14} />
+                : isDelivered
+                  ? <CheckCheck className="mr-1 inline" size={14} />
+                  : <Check className="mr-1 inline" size={14} />)}
+              {getLastMessageIcon(lastMessage)}
+              {preview}
+            </span>
+            <span className="conversation-tools">
+              {chat.unreadCount > 0 && (
+                <span className="unread-badge" aria-label={`${chat.unreadCount} unread messages`}>
+                  {chat.unreadCount > 99 ? '99+' : chat.unreadCount}
+                </span>
+              )}
+              <button
+                type="button"
+                className="conversation-tool"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  togglePinChat(chat._id);
+                }}
+                aria-label={pinnedChatIds.includes(chat._id) ? 'Unpin chat' : 'Pin chat'}
+                title={pinnedChatIds.includes(chat._id) ? 'Unpin chat' : 'Pin chat'}
+              >
+                <Pin size={14} className={pinnedChatIds.includes(chat._id) ? 'text-emerald-700' : ''} />
+              </button>
+              <button
+                type="button"
+                className="conversation-tool"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  toggleArchiveChat(chat._id);
+                }}
+                aria-label="Archive chat"
+                title="Archive chat"
+              >
+                <Archive size={14} />
+              </button>
+            </span>
+          </span>
+        </span>
       </div>
     );
   };
 
-  return <div className="space-y-3">{showArchivedView ? <div className="flex flex-col h-full animate-in slide-in-from-right-2 duration-200"><div className="flex items-center gap-3 p-2 mb-2 text-slate-200 border-b border-slate-700/60 pb-3"><button onClick={() => setShowArchivedView(false)} className="p-2 hover:bg-slate-700 rounded-full transition-colors"><ArrowLeft size={20} /></button><h3 className="font-semibold text-lg">Archived</h3></div><div className="space-y-1 overflow-y-auto">{archivedChats.map(renderRow)}</div></div> : <><div className="relative"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /><input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search chats" className="w-full bg-slate-700/70 text-slate-200 pl-9 pr-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500" /></div><div className="space-y-1">{archivedChats.length > 0 && <div onClick={() => setShowArchivedView(true)} className="flex items-center gap-4 p-3 rounded-xl cursor-pointer hover:bg-slate-700/60 transition-colors border border-transparent mb-1"><div className="size-10 rounded-full bg-slate-800 flex items-center justify-center"><Archive size={18} className="text-emerald-500" /></div><div className="flex-1 font-medium text-slate-200">Archived</div><span className="text-xs text-emerald-500 font-medium">{archivedChats.length}</span></div>}{visibleChats.map(renderRow)}</div></>}</div>;
+  return (
+    <section aria-label="Conversations">
+      {showArchivedView ? (
+        <>
+          <button type="button" className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-[var(--ink)]" onClick={() => setShowArchivedView(false)}>
+            <ArrowLeft size={17} /> Archived chats
+          </button>
+          <div className="conversation-list">{archivedChats.map(renderRow)}</div>
+        </>
+      ) : (
+        <>
+          <label className="relative block">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
+            <input
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search conversations"
+              className="chat-search py-3 pl-10 pr-3 text-sm focus:outline-none"
+              aria-label="Search conversations"
+            />
+          </label>
+          {archivedChats.length > 0 && (
+            <button type="button" className="conversation-row mt-3" onClick={() => setShowArchivedView(true)}>
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[var(--accent-soft)] text-[var(--accent)]"><ArchiveRestore size={18} /></span>
+              <span className="conversation-copy">
+                <span className="conversation-title">Archived</span>
+                <span className="conversation-preview">{archivedChats.length} conversations</span>
+              </span>
+            </button>
+          )}
+          <div className="conversation-list">{visibleChats.map(renderRow)}</div>
+          {visibleChats.length === 0 && <p className="px-3 py-8 text-center text-sm text-[var(--muted)]">No conversations match your search.</p>}
+        </>
+      )}
+    </section>
+  );
 }
 
 export default ChatsList;

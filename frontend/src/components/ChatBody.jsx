@@ -56,7 +56,7 @@ const MessageSkeleton = () => {
   ];
 
   return (
-    <div className='flex-1 p-4 md:px-8 bg-[#0b141a] overflow-y-hidden flex flex-col gap-4'>
+    <div className='chat-body flex-1 p-4 md:px-8 bg-[#0b141a] overflow-y-hidden flex flex-col gap-4'>
       {skeletonMessages.map((msg) => (
         <div key={msg.id} className={`flex w-full ${msg.isOwn ? 'justify-end' : 'justify-start'}`}>
           <div 
@@ -251,6 +251,7 @@ const MessageBubble = ({
   onOpenViewOnce,
   selectedUser,
   chatBubbleColors,
+  theme,
   selectedMessages
 }) => {
   const [swipeOffset, setSwipeOffset] = useState(0);
@@ -354,7 +355,13 @@ const MessageBubble = ({
           <div 
             className={`chat-bubble relative group/bubble flex flex-col gap-1 rounded-lg w-fit max-w-[85%] sm:max-w-[75%] md:max-w-[65%] lg:max-w-[50%] ${isOwnMessage ? 'text-white' : 'text-slate-100'}`} 
             style={{ 
-              backgroundColor: isOwnMessage ? chatBubbleColors.own : chatBubbleColors.other,
+              backgroundColor: isOwnMessage
+                ? (chatBubbleColors.own === '#005c4b' ? 'var(--message-own)' : chatBubbleColors.own)
+                : (chatBubbleColors.other === '#202c33'
+                  ? 'var(--message-other)'
+                  : theme === 'dark' && chatBubbleColors.other === '#fffdf6'
+                    ? 'var(--message-other)'
+                    : chatBubbleColors.other),
               transform: `translateX(${swipeOffset}px)`,
               userSelect: 'none', 
               wordBreak: 'break-word', 
@@ -440,7 +447,7 @@ function ChatBody() {
   const { 
     messages, selectedUser, subscribeToTypingEvents, unsubscribeFromTypingEvents, 
     isTyping, isMessagesLoading, toggleSelectedMessage, selectedMessages, 
-    setReplyTarget, reactToMessage, chatBackground, chatBubbleColors, chatBgOpacity, openViewOnceMessage 
+    setReplyTarget, reactToMessage, chatBackground, chatBubbleColors, chatBgOpacity, openViewOnceMessage, theme
   } = useChatStore();
   
   const [lightboxMedia, setLightboxMedia] = useState(null);
@@ -480,7 +487,7 @@ function ChatBody() {
   return (
     <>
       {messages.length === 0 ? <NoChatHistory /> : (
-        <div className='flex-1 relative min-h-0 bg-[#0b141a] overflow-hidden'>
+        <div className='chat-body flex-1 relative min-h-0 bg-[#0b141a] overflow-hidden'>
           
           {chatBackground && (
             <div 
@@ -535,6 +542,7 @@ function ChatBody() {
                     onOpenViewOnce={handleOpenViewOnce}
                     selectedUser={selectedUser}
                     chatBubbleColors={chatBubbleColors}
+                    theme={theme}
                     selectedMessages={selectedMessages}
                   />
                 </React.Fragment>

@@ -17,14 +17,14 @@ function ChatContainer() {
 
   return (
     <>
-      <div className="flex min-h-0 flex-1">
+      <div className="chat-container flex min-h-0 flex-1">
         <div className="flex min-h-0 flex-1 flex-col">
           <ChatHeader />
           <GameQuickActions />
           <ChatBody />
           <ChatFooter />
         </div>
-        <aside className="hidden w-[320px] border-l border-[#2f3b43] bg-[#0f171d] xl:block">
+        <aside className="chat-details hidden w-[320px] border-l border-[#2f3b43] bg-[#0f171d] xl:block">
           <div className="h-full overflow-y-auto p-4">
             <StatusPanel compact onOpenChatWithUser={(user) => setSelectedUser(user)} />
           </div>

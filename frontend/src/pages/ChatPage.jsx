@@ -1,4 +1,3 @@
-import BorderAnimated from '../components/BorderAnimated.jsx';
 import ProfileHeader from '../components/ProfileHeader.jsx';
 import ActiveTabSwitch from '../components/ActiveTabSwitch.jsx';
 import { useChatStore } from '../store/useChatStore.js';
@@ -9,27 +8,24 @@ import NoConversationPlacehoder from '../components/NoConversationPlacehoder.jsx
 import GameLayer from '../components/GameLayer.jsx';
 import StatusPanel from '../components/StatusPanel.jsx';
 function ChatPage() {
-  const {activeTab,selectedUser} = useChatStore();
+  const { activeTab, selectedUser } = useChatStore();
  
   return (
-    <div className="relative w-full max-w-6xl" style={{ height: "var(--app-height, 100dvh)" }}>
+    <main className="chat-page" style={{ height: "var(--app-height, 100dvh)" }}>
       <GameLayer />
-      <BorderAnimated>
-      {/* Left side - contacts list */}
-      <div className={` ${selectedUser ? 'hidden md:flex' : 'block'} w-full md:w-80  bg-slate-800/50 backdrop-blur-sm flex flex-col`}>
-        <ProfileHeader />
-        <ActiveTabSwitch />
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {activeTab === 'chats' ? <ChatsList /> : activeTab === 'updates' ? <StatusPanel /> : <ContactList />}
-        </div>
+      <div className={`chat-workspace ${selectedUser ? 'chat-workspace--conversation' : ''}`}>
+        <aside className={`chat-sidebar ${selectedUser ? 'chat-sidebar--hidden' : ''}`}>
+          <ProfileHeader />
+          <ActiveTabSwitch />
+          <div className="chat-sidebar-content">
+            {activeTab === 'chats' ? <ChatsList /> : activeTab === 'updates' ? <StatusPanel /> : <ContactList />}
+          </div>
+        </aside>
+        <section className={`chat-main ${selectedUser ? '' : 'chat-main--empty'}`}>
+          {selectedUser ? <ChatContainer /> : <NoConversationPlacehoder />}
+        </section>
       </div>
-
-      {/* Right side - chat area */}
-      <div className={`md:flex-1 flex flex-col bg-slate-900/50 backdrop-blur-sm ${selectedUser ? 'flex-1' : ''}`}>
-        {selectedUser ? <ChatContainer /> : <NoConversationPlacehoder />}
-      </div>
-      </BorderAnimated>
-    </div>
+    </main>
   )
 }
 

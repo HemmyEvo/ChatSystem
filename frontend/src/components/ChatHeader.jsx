@@ -148,7 +148,7 @@ function ChatHeader() {
 
   return (
     <>
-      <div className='w-full flex items-center justify-between px-4 py-3 md:px-6 bg-[#202c33] border-b border-[#2f3b43]'>
+      <div className='chat-header w-full flex items-center justify-between px-4 py-3 md:px-6 bg-[#202c33] border-b border-[#2f3b43]'>
         <input 
           type="file" 
           ref={fileInputRef} 

@@ -12,6 +12,10 @@ export const useGameStore = create((set, get) => ({
 
   startInvite: (gameType, toUserId) => {
     const socket = useAuthStore.getState().socket;
+    if (!['whot', 'ludo', 'tictactoe', 'connect4'].includes(gameType)) {
+      toast.error('That game is no longer available.');
+      return;
+    }
     if (!toUserId) {
       toast.error('Select a chat user first.');
       return;

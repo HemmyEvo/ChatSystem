@@ -5,6 +5,7 @@ import SignUpPage from './pages/SignUpPage';
 import { useAuthStore } from './store/useAuthStore';
 import { useGameStore } from './store/useGameStore';
 import { useCallStore } from './store/useCallStore';
+import { useChatStore } from './store/useChatStore';
 import { useEffect } from 'react';
 import PageLoader from './components/PageLoader';
 import { Toaster } from 'react-hot-toast';
@@ -12,6 +13,7 @@ import CallLayer from './components/CallLayer';
 
 function App() {
   const { checkAuth, isCheckingAuth, authUser, socket } = useAuthStore();
+  const theme = useChatStore((state) => state.theme);
   const { subscribeGameEvents } = useGameStore();
   const { subscribeToCallEvents, unsubscribeFromCallEvents } = useCallStore();
 
@@ -19,6 +21,14 @@ function App() {
     checkAuth();
   }, [checkAuth]);
 
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute(
+      'content',
+      theme === 'dark' ? '#14241c' : '#f6f3e8',
+    );
+  }, [theme]);
 
   useEffect(() => {
     const syncViewportHeight = () => {
@@ -86,10 +96,7 @@ function App() {
   if (isCheckingAuth) return <PageLoader />;
 
   return (
-    <div className='min-h-screen bg-slate-900 relative flex items-center justify-center overflow-hidden' style={{ minHeight: 'var(--app-height, 100dvh)' }}>
-      <div className='absolute inset-0  bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-[size:14px_24px]' />
-      <div className='absolute top-0 -left-4 size-96 bg-pink-500 opacity-20 blur-[100px]' />
-      <div className='absolute bottom-0 -right-4 size-96 bg-cyan-500 opacity-20 blur-[100px]' />
+    <div className="app-root" style={{ minHeight: 'var(--app-height, 100dvh)' }}>
       <Routes>
         <Route path='/' element={authUser ? <ChatPage /> : <Navigate to={'/login'} />} />
         <Route path='/login' element={authUser ? <Navigate to={'/'} /> : <LoginPage />} />

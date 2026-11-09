@@ -388,6 +388,25 @@ export const messageController = {
       if (!interactionCheck.ok) {
         return res.status(interactionCheck.code).json({ message: interactionCheck.message });
       }
+      if (sharedContactId) {
+        if (sharedContactId.toString() === receiverId.toString()) {
+          return res.status(400).json({ message: 'You cannot share the person you are chatting with.' });
+        }
+        const alreadyHasConversation = await Message.exists({
+          $or: [
+            { senderId, receiverId: sharedContactId },
+            { senderId: sharedContactId, receiverId: senderId },
+          ],
+        });
+        if (alreadyHasConversation) {
+          return res.status(400).json({ message: 'You cannot share a contact you already have a conversation with.' });
+        }
+        const sender = await User.findById(senderId).select('friends');
+        const isFriend = sender?.friends.some((friendId) => friendId.toString() === sharedContactId.toString());
+        if (!isFriend) {
+          return res.status(403).json({ message: 'You can only share contacts who are your friends.' });
+        }
+      }
 
       const uploadMedia = async (fileBase64) => {
         if (!fileBase64) return null;
@@ -398,9 +417,12 @@ export const messageController = {
         return uploadResult.secure_url;
       };
 
+      const stickerData = typeof sticker === 'string' && sticker.startsWith('data:image/svg+xml;base64,')
+        ? sticker
+        : uploadMedia(sticker);
       const [imageUrl, stickerUrl, videoUrl, audioUrl, documentUrl] = await Promise.all([
         uploadMedia(image),
-        uploadMedia(sticker),
+        stickerData,
         uploadMedia(video),
         uploadMedia(audio),
         uploadMedia(document),

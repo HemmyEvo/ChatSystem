@@ -24,7 +24,7 @@ function ContactList() {
         {people.map((person) => {
           const isOnline = onlineUsers.includes(person._id);
           return (
-            <div key={person._id} className="bg-slate-800/70 p-3 rounded-xl border border-slate-700">
+            <div key={person._id} className="contact-list-card bg-slate-800/70 p-3 rounded-xl border border-slate-700">
               <div className="flex items-center gap-3">
                 <div className={`avatar ${isOnline ? 'online' : 'offline'}`}>
                   <div className="size-11 rounded-full"><img src={person.profilePicture || '/avatar.png'} alt={person.username} className="object-cover" /></div>

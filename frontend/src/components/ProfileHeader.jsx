@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Settings, LogOutIcon, Volume2Icon, VolumeOffIcon, ChevronDown, Download, Pencil, Check, Bell, BellOff } from "lucide-react";
+import { Settings, LogOutIcon, Volume2Icon, VolumeOffIcon, ChevronDown, Download, Pencil, Check, Bell, BellOff, MessageCircle } from "lucide-react";
 import { useAuthStore } from "../store/useAuthStore";
 import { useChatStore } from "../store/useChatStore";
 import toast from 'react-hot-toast';
 import { disablePushNotifications, enablePushNotifications } from '../lib/pushNotifications';
+import ThemeToggle from './ThemeToggle';
 
 const receiveSoundPreview = new Audio("/sounds/notification.mp3");
 const sendSoundPreview = new Audio("/sounds/send.mp3");
@@ -151,7 +152,14 @@ function ProfileHeader() {
   };
 
   return (
-    <div className="border-b border-[#2a3942] bg-[#111b21] px-4 py-5">
+    <div className="profile-header border-b border-[#2a3942] bg-[#111b21] px-4 py-5">
+      <div className="profile-brandline">
+        <div className="auth-brand text-[var(--ink)]">
+          <span className="profile-brand-mark"><MessageCircle size={18} /></span>
+          <span>Existo</span>
+        </div>
+        <span className="profile-tagline">Your people, closer.</span>
+      </div>
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <div className="relative">
@@ -223,6 +231,7 @@ function ProfileHeader() {
 
           {openMenu && (
             <div className="absolute right-0 mt-2 w-56 rounded-2xl border border-[#2a3942] bg-[#202c33] p-2 shadow-xl z-20">
+              <ThemeToggle className="w-full justify-between px-3 py-2 text-sm" />
               <button
                 className="w-full flex items-center justify-between px-3 py-2 text-sm text-slate-200 hover:bg-white/5 rounded-xl transition-colors"
                 onClick={() => toggleSound("receive")}
