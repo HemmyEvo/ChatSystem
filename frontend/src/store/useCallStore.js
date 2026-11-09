@@ -2,10 +2,19 @@ import { create } from 'zustand';
 import toast from 'react-hot-toast';
 import { useAuthStore } from './useAuthStore';
 
-const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+const turnUrls = import.meta.env.VITE_TURN_URL?.split(',').map((url) => url.trim()).filter(Boolean) || [];
+const ICE_SERVERS = [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+  ...(turnUrls.length ? [{
+    urls: turnUrls,
+    username: import.meta.env.VITE_TURN_USERNAME,
+    credential: import.meta.env.VITE_TURN_CREDENTIAL,
+  }] : []),
+];
 const DRAW_HISTORY_LIMIT = 250;
 const MISSED_CALL_LIMIT = 20;
 const CALL_SESSION_STORAGE_KEY = 'activeCallSession';
+let signalQueue = Promise.resolve();
 
 const makeEmptyStroke = ({ color = '#22d3ee', width = 3 } = {}) => ({
   id: `stroke-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -74,6 +83,7 @@ export const useCallStore = create((set, get) => ({
   recorder: null,
   recordingTimer: null,
   peerConnection: null,
+  pendingIceCandidates: [],
   dataChannel: null,
   remoteMediaState: { isMuted: false, isCameraEnabled: true, isScreenSharing: false, isRecording: false },
   remoteLocation: null,
@@ -193,6 +203,7 @@ export const useCallStore = create((set, get) => ({
     if (previewStream && previewStream !== localStream && isScreenSharing) previewStream.getTracks().forEach((track) => track.stop());
     set({
       peerConnection: null,
+      pendingIceCandidates: [],
       dataChannel: null,
       remoteStream: null,
       previewStream: localStream || null,
@@ -305,7 +316,13 @@ export const useCallStore = create((set, get) => ({
       get().persistCurrentCall();
     };
     peerConnection.onicecandidate = (event) => {
-      if (event.candidate) socket?.emit('call:signal', { toUserId: targetUserId, candidate: event.candidate });
+      if (event.candidate) {
+        socket?.emit('call:signal', {
+          toUserId: targetUserId,
+          sessionId: get().sessionId,
+          candidate: event.candidate,
+        });
+      }
     };
     peerConnection.onconnectionstatechange = syncConnectionState;
     peerConnection.oniceconnectionstatechange = syncConnectionState;
@@ -332,7 +349,11 @@ export const useCallStore = create((set, get) => ({
     const peerConnection = await get().createPeerConnection(targetUserId, { createDataChannel: get().callMode === 'video' });
     const offer = await peerConnection.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: get().callMode === 'video' });
     await peerConnection.setLocalDescription(offer);
-    socket?.emit('call:signal', { toUserId: targetUserId, description: peerConnection.localDescription });
+    socket?.emit('call:signal', {
+      toUserId: targetUserId,
+      sessionId: get().sessionId,
+      description: peerConnection.localDescription,
+    });
     set({ callStatus: get().callStatus === 'connected' ? 'reconnecting' : 'connecting' });
     get().persistCurrentCall();
   },
@@ -569,29 +590,50 @@ export const useCallStore = create((set, get) => ({
       }
     });
 
-    socket.on('call:signal', async ({ fromUserId, description, candidate }) => {
-      try {
+    socket.on('call:signal', (signal) => {
+      signalQueue = signalQueue.then(async () => {
+        const { fromUserId, description, candidate, sessionId } = signal;
+        if (sessionId && get().sessionId && sessionId !== get().sessionId) return;
+
         let peerConnection = get().peerConnection;
         if (!peerConnection) peerConnection = await get().createPeerConnection(fromUserId, { createDataChannel: false });
         if (description) {
-          if (!peerConnection.currentRemoteDescription || peerConnection.currentRemoteDescription.type !== description.type) {
+          if (description.type === 'offer' && peerConnection.signalingState !== 'stable') {
+            await peerConnection.setLocalDescription({ type: 'rollback' });
+          }
+          if (peerConnection.remoteDescription?.type !== description.type) {
             await peerConnection.setRemoteDescription(new RTCSessionDescription(description));
+          }
+          const queuedCandidates = get().pendingIceCandidates;
+          set({ pendingIceCandidates: [] });
+          for (const queuedCandidate of queuedCandidates) {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(queuedCandidate));
           }
           if (description.type === 'offer') {
             const answer = await peerConnection.createAnswer();
             await peerConnection.setLocalDescription(answer);
-            socket.emit('call:signal', { toUserId: fromUserId, description: peerConnection.localDescription });
+            socket.emit('call:signal', {
+              toUserId: fromUserId,
+              sessionId: get().sessionId,
+              description: peerConnection.localDescription,
+            });
           }
           set({ callStatus: 'connected', connectionQuality: 'connected' });
           get().persistCurrentCall();
           get().syncMediaState();
         }
-        if (candidate) await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (error) {
+        if (candidate) {
+          if (peerConnection.remoteDescription) {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+          } else {
+            set((state) => ({ pendingIceCandidates: [...state.pendingIceCandidates, candidate] }));
+          }
+        }
+      }).catch((error) => {
         console.error('Error handling call signal:', error);
         toast.error(get().callMode === 'video' ? 'Video call connection was interrupted.' : 'Voice call connection was interrupted.');
         get().cleanupCall();
-      }
+      });
     });
 
     socket.on('call:resume', async ({ sessionId, otherUser, media, status, shouldRing }) => {

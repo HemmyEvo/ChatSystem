@@ -18,6 +18,7 @@ router.get('/:id', messageController.messageById);
 router.post('/send/:id', messageController.sendMessage);
 router.patch('/read/:id', messageController.markAsRead);
 router.post('/block/:id', messageController.blockUser);
+router.delete('/block/:id', messageController.unblockUser);
 router.delete('/delete-chat/:id', messageController.deleteAllMessagesWithUser);
 router.post('/react/:id', messageController.reactToMessage);
 router.delete('/delete-for-me/:id', messageController.deleteMessageForMe);

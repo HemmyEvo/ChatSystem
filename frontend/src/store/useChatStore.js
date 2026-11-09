@@ -12,8 +12,10 @@ const sortChats = (chats) =>
   });
 
 const updateChatWithLastMessage = (chats, message) => {
-  const me = useAuthStore.getState().authUser?._id;
-  const partnerId = message.senderId === me ? message.receiverId : message.senderId;
+  const me = useAuthStore.getState().authUser?._id?.toString();
+  const senderId = message.senderId?.toString();
+  const receiverId = message.receiverId?.toString();
+  const partnerId = senderId === me ? receiverId : senderId;
   const selectedUserId = useChatStore.getState().selectedUser?._id;
 
   const chatExists = chats.some((c) => c._id === partnerId);
@@ -27,7 +29,11 @@ const updateChatWithLastMessage = (chats, message) => {
       if (chat._id !== partnerId) return chat;
       const currentUnread = Number(chat.unreadCount || 0);
       const isCurrentlyOpen = selectedUserId === partnerId;
-      const shouldIncreaseUnread = message.senderId === partnerId && !(message.readBy || []).includes(me) && !isCurrentlyOpen;
+      const alreadyLatestMessage = chat.lastMessage?._id?.toString() === message._id?.toString();
+      const shouldIncreaseUnread = !alreadyLatestMessage
+        && senderId === partnerId
+        && !(message.readBy || []).some((id) => id?.toString() === me)
+        && !isCurrentlyOpen;
       return { ...chat, lastMessage: message, unreadCount: shouldIncreaseUnread ? currentUnread + 1 : currentUnread };
     }),
   );
@@ -55,6 +61,7 @@ const updateChatLastMessageByIds = (chats, messageIds, updater) =>
   );
 
 let typingTimeout = null;
+let messageRequestSequence = 0;
 
 const clearBrowserSession = async () => {
   try {
@@ -178,7 +185,21 @@ export const useChatStore = create((set, get) => ({
   },
   setSelectedUser: (user) => {
     if (!user?._id) return set({ selectedUser: user, selectedMessages: [], replyTarget: null });
-    set({ selectedUser: user, selectedMessages: [], replyTarget: null, chats: get().chats.map((chat) => (chat._id === user._id ? { ...chat, unreadCount: 0 } : chat)) });
+    const cachedUser = [get().chats, get().people, get().friends]
+      .flat()
+      .find((entry) => entry._id === user._id);
+    set({
+      selectedUser: {
+        ...user,
+        isBlockedByMe: cachedUser?.isBlockedByMe ?? user.isBlockedByMe,
+        isBlockedByThem: cachedUser?.isBlockedByThem ?? user.isBlockedByThem,
+      },
+      selectedMessages: [],
+      replyTarget: null,
+      messages: [],
+      isTyping: false,
+      chats: get().chats.map((chat) => (chat._id === user._id ? { ...chat, unreadCount: 0 } : chat)),
+    });
   },
 
   emitTypingEvent: () => {
@@ -290,13 +311,30 @@ export const useChatStore = create((set, get) => ({
   },
 
   getMessagesByUserId: async (userId) => {
+    const requestId = ++messageRequestSequence;
     set({ isMessagesLoading: true, selectedMessages: [] });
     try {
       const res = await api.get(`/message/${userId}`);
-      set({ messages: res.data.messages, chats: get().chats.map((chat) => (chat._id === userId ? { ...chat, unreadCount: 0 } : chat)) });
-      await api.patch(`/message/read/${userId}`);
-      useAuthStore.getState().socket?.emit('chat:opened', { chatUserId: userId });
-    } finally { set({ isMessagesLoading: false }); }
+      if (requestId !== messageRequestSequence || get().selectedUser?._id !== userId) return;
+      set({
+        messages: res.data.messages,
+        chats: get().chats.map((chat) => (chat._id === userId ? { ...chat, unreadCount: 0 } : chat)),
+      });
+      const readResponse = await api.patch(`/message/read/${userId}`);
+      const myId = useAuthStore.getState().authUser?._id;
+      const messageIds = readResponse.data.messageIds || [];
+      const readIds = new Set(messageIds.map((id) => id.toString()));
+      useAuthStore.getState().socket?.emit('chat:opened', { chatUserId: userId, messageIds });
+      if (readIds.size) {
+        set((state) => ({
+          messages: state.messages.map((message) => (readIds.has(message._id.toString())
+            ? { ...message, readBy: mergeUniqueIds(message.readBy, myId), deliveredTo: mergeUniqueIds(message.deliveredTo, myId) }
+            : message)),
+        }));
+      }
+    } finally {
+      if (requestId === messageRequestSequence) set({ isMessagesLoading: false });
+    }
   },
 
   getUserById: async (idOrObject) => {
@@ -392,21 +430,38 @@ export const useChatStore = create((set, get) => ({
     socket.off('friend:request:responded');
     socket.off('chat:last-message');
     socket.off('message:deleted-everyone');
+    socket.off('chat:blocked');
 
     socket.on('newMessage', async (message) => {
       const selectedUser = get().selectedUser;
       const myId = useAuthStore.getState().authUser?._id;
-      const isChatOpen = selectedUser && message.senderId === selectedUser._id;
+      const isChatOpen = selectedUser && message.senderId?.toString() === selectedUser._id?.toString();
       if (isChatOpen) {
-        const readMessage = { ...message, readBy: [...new Set([...(message.readBy || []), myId])] };
-        set({ messages: [...get().messages, readMessage] });
-        try { await api.patch(`/message/read/${selectedUser._id}`); } catch (error) { console.error("Failed to mark as read", error); }
-      } else if (selectedUser && message.receiverId === selectedUser._id) {
-        set({ messages: [...get().messages, message] });
+        set((state) => ({
+          messages: state.messages.some((item) => item._id?.toString() === message._id?.toString())
+            ? state.messages
+            : [...state.messages, message],
+        }));
+        try {
+          const readResponse = await api.patch(`/message/read/${selectedUser._id}`);
+          useAuthStore.getState().socket?.emit('chat:opened', {
+            chatUserId: selectedUser._id,
+            messageIds: readResponse.data.messageIds || [],
+          });
+        } catch (error) {
+          console.error('Failed to mark messages as read:', error);
+        }
+      } else if (selectedUser && message.receiverId?.toString() === selectedUser._id?.toString()) {
+        set((state) => ({
+          messages: state.messages.some((item) => item._id?.toString() === message._id?.toString())
+            ? state.messages
+            : [...state.messages, message],
+        }));
       }
       set({ chats: updateChatWithLastMessage(get().chats, message) });
-      if (message.receiverId === myId && get().soundSettings.receive && !isChatOpen) {
-        new Audio('/sounds/notification.mp3').play().catch(() => {});
+      if (message.receiverId?.toString() === myId?.toString() && get().soundSettings.receive && !isChatOpen) {
+        const notificationSound = new Audio('/sounds/digitalstore07-new-message-alert-430414.mp3');
+        notificationSound.play().catch((error) => console.warn('Message sound could not be played:', error));
       }
     });
 
@@ -461,7 +516,15 @@ export const useChatStore = create((set, get) => ({
       toast.success(accepted ? `@${user?.username} accepted your friend request` : `@${user?.username} declined your friend request`);
     });
     socket.on('chat:last-message', (message) => {
-      set({ chats: updateChatWithLastMessage(get().chats, message) });
+      set((state) => ({
+        chats: sortChats(state.chats.map((chat) => (
+          chat._id === (message.senderId?.toString() === useAuthStore.getState().authUser?._id?.toString()
+            ? message.receiverId?.toString()
+            : message.senderId?.toString())
+            ? { ...chat, lastMessage: message }
+            : chat
+        ))),
+      }));
     });
     socket.on('message:deleted-everyone', ({ messageId, chatUserId, lastMessage }) => {
       set({
@@ -469,6 +532,17 @@ export const useChatStore = create((set, get) => ({
         selectedMessages: get().selectedMessages.filter((id) => id !== messageId),
         chats: syncChatAfterDeletion(get().chats, chatUserId, lastMessage),
       });
+    });
+    socket.on('chat:blocked', ({ byUserId }) => {
+      set((state) => ({
+        selectedUser: state.selectedUser?._id === byUserId
+          ? { ...state.selectedUser, isBlockedByThem: true }
+          : state.selectedUser,
+        chats: state.chats.map((chat) => (chat._id === byUserId ? { ...chat, isBlockedByThem: true } : chat)),
+        people: state.people.map((person) => (person._id === byUserId ? { ...person, isBlockedByThem: true } : person)),
+        friends: state.friends.map((friend) => (friend._id === byUserId ? { ...friend, isBlockedByThem: true } : friend)),
+      }));
+      toast.error('This contact has blocked messaging and calls.');
     });
   },
   unsubscribeFromNewMessages: () => {
@@ -481,8 +555,29 @@ export const useChatStore = create((set, get) => ({
     socket?.off('friend:request:responded');
     socket?.off('chat:last-message');
     socket?.off('message:deleted-everyone');
+    socket?.off('chat:blocked');
   },
 
-  blockUser: async (userId) => { await api.post(`/message/block/${userId}`); toast.success('User blocked'); },
+  blockUser: async (userId) => {
+    const res = await api.post(`/message/block/${userId}`);
+    const isBlockedByMe = true;
+    set((state) => ({
+      selectedUser: state.selectedUser?._id === userId ? { ...state.selectedUser, isBlockedByMe } : state.selectedUser,
+      chats: state.chats.map((chat) => (chat._id === userId ? { ...chat, isBlockedByMe } : chat)),
+      people: state.people.map((person) => (person._id === userId ? { ...person, isBlockedByMe } : person)),
+      friends: state.friends.map((friend) => (friend._id === userId ? { ...friend, isBlockedByMe } : friend)),
+    }));
+    toast.success(res.data.message || 'User blocked');
+  },
+  unblockUser: async (userId) => {
+    const res = await api.delete(`/message/block/${userId}`);
+    set((state) => ({
+      selectedUser: state.selectedUser?._id === userId ? { ...state.selectedUser, isBlockedByMe: false } : state.selectedUser,
+      chats: state.chats.map((chat) => (chat._id === userId ? { ...chat, isBlockedByMe: false } : chat)),
+      people: state.people.map((person) => (person._id === userId ? { ...person, isBlockedByMe: false } : person)),
+      friends: state.friends.map((friend) => (friend._id === userId ? { ...friend, isBlockedByMe: false } : friend)),
+    }));
+    toast.success(res.data.message || 'User unblocked');
+  },
   deleteChatHistory: async (userId) => { await api.delete(`/message/delete-chat/${userId}`); set({ messages: [], chats: get().chats.map((chat) => (chat._id === userId ? { ...chat, lastMessage: null } : chat)) }); toast.success('Chat deleted for me'); },
 }));

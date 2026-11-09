@@ -3,6 +3,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { PhoneMissed } from 'lucide-react';
 import { useGameStore } from '../store/useGameStore';
 import { useAuthStore } from '../store/useAuthStore';
+import BoardGames from './BoardGames';
+import FootballMatch from './FootballMatch';
 
 const WhotCardDesign = ({ card, playable, onPlay, disabled }) => {
   const getSuitSymbol = (suit) => {
@@ -615,6 +617,13 @@ export default function GameLayer() {
     });
   };
   const handleRollDice = (diceValues) => sendAction({ type: 'roll', dice1: diceValues[0], dice2: diceValues[1] });
+  const gameTitle = {
+    whot: 'WHOT',
+    ludo: 'LUDO',
+    football: 'FOOTBALL',
+    tictactoe: 'TIC-TAC-TOE',
+    connect4: 'CONNECT FOUR',
+  }[activeGame?.gameType] || 'GAME';
 
   return (
     <>
@@ -672,7 +681,7 @@ export default function GameLayer() {
               <div className="flex items-center gap-3">
                 <span className="text-4xl">🎲</span>
                 <div>
-                  <h2 className="text-3xl font-bold">{activeGame.gameType === 'whot' ? 'WHOT' : 'LUDO'}</h2>
+                  <h2 className="text-3xl font-bold">{gameTitle}</h2>
                   <p className="text-sm opacity-80">Existo app</p>
                 </div>
               </div>
@@ -686,7 +695,9 @@ export default function GameLayer() {
             {activeGame.gameType === 'whot' ? (
               <NigerianWhotView game={activeGame} onPlayCard={handlePlayCard} onDraw={handleDrawCard} />
             ) : activeGame.gameType === 'football' ? (
-              <NigerianFootballView game={activeGame} me={me} />
+              <FootballMatch game={activeGame} me={me} sendAction={sendAction} />
+            ) : activeGame.gameType === 'tictactoe' || activeGame.gameType === 'connect4' ? (
+              <BoardGames game={activeGame} me={me} sendAction={sendAction} />
             ) : (
               <NigerianLudoBoard
                 game={activeGame}
@@ -703,6 +714,11 @@ export default function GameLayer() {
               <span className="text-2xl font-bold text-black">
                 🏆 Winner: {activeGame.winnerId === me?._id ? '🎉 You! Congratulations!' : 'Opponent'} 🏆
               </span>
+            </div>
+          )}
+          {activeGame.isDraw && (
+            <div className="p-4 border-t-4 border-slate-400 bg-slate-200 text-center text-2xl font-bold text-slate-900">
+              🤝 Match drawn
             </div>
           )}
         </div>

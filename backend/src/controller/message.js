@@ -2,6 +2,7 @@ import cloudinary from "../lib/cloudinary.js";
 import { getReceiverSocketId, io } from "../lib/socketState.js";
 import Message from "../models/Message.js";
 import User from "../models/User.js";
+import { sendPushNotification } from '../lib/pushNotifications.js';
 
 const canInteract = async (senderId, receiverId) => {
   const [sender, receiver] = await Promise.all([
@@ -105,6 +106,8 @@ const mapRelationship = (viewer, user) => ({
   profilePicture: user.profilePicture,
   bio: user.bio,
   lastSeen: user.lastSeen,
+  isBlockedByMe: viewer.blockedUsers.some((id) => id.toString() === user._id.toString()),
+  isBlockedByThem: user.blockedUsers.some((id) => id.toString() === viewer._id.toString()),
   isFriend: viewer.friends.some((id) => id.toString() === user._id.toString()),
   requestSent: viewer.friendRequestsSent.some((id) => id.toString() === user._id.toString()),
   requestReceived: viewer.friendRequestsReceived.some((id) => id.toString() === user._id.toString()),
@@ -115,7 +118,7 @@ export const messageController = {
     try {
       const loggedInUserId = req.user._id;
       const search = (req.query.search || '').trim();
-      const loggedInUser = await User.findById(loggedInUserId).select('friends friendRequestsSent friendRequestsReceived');
+      const loggedInUser = await User.findById(loggedInUserId).select('friends friendRequestsSent friendRequestsReceived blockedUsers');
       const query = { _id: { $ne: loggedInUserId } };
       if (search) {
         query.username = { $regex: search, $options: 'i' };
@@ -270,7 +273,10 @@ export const messageController = {
         }
       });
 
-      const chatPartners = await User.find({ _id: { $in: chatPartnerIds } }).select('-password');
+      const [chatPartners, currentUser] = await Promise.all([
+        User.find({ _id: { $in: chatPartnerIds } }).select('username email profilePicture bio lastSeen blockedUsers'),
+        User.findById(loggedInUserId).select('blockedUsers'),
+      ]);
 
       const unreadByPartner = await Message.aggregate([
         {
@@ -301,6 +307,8 @@ export const messageController = {
           profilePicture: partner.profilePicture,
           bio: partner.bio,
           lastSeen: partner.lastSeen,
+          isBlockedByMe: currentUser.blockedUsers.some((id) => id.toString() === partner._id.toString()),
+          isBlockedByThem: partner.blockedUsers.some((id) => id.toString() === loggedInUserId.toString()),
           lastMessage: lastMessageByPartner[partner._id.toString()]
             ? serializeMessageForViewer(lastMessageByPartner[partner._id.toString()], loggedInUserId)
             : null,
@@ -429,6 +437,14 @@ export const messageController = {
       const serializedForSender = serializeMessageForViewer(newMessage, senderId);
 
       if (receiverSocketId) io.to(receiverSocketId).emit('newMessage', serializedForReceiver);
+      else {
+        await sendPushNotification(receiverId, {
+          title: `New message from @${req.user.username}`,
+          body: text || (image ? 'Photo' : video ? 'Video' : audio ? 'Voice message' : 'You received a new message'),
+          url: '/',
+          tag: `chat-${senderId}`,
+        }).catch((error) => console.error('Unable to queue message push notification:', error));
+      }
       if (receiverSocketId) {
         const senderSocketId = getReceiverSocketId(senderId.toString());
         if (senderSocketId) {
@@ -665,11 +681,19 @@ export const messageController = {
         );
         const chatUserSocketId = getReceiverSocketId(chatUserId);
         if (chatUserSocketId) {
-          io.to(chatUserSocketId).emit('messages:read', { readerId: myId.toString(), chatUserId, messageIds: unreadMessages.map((m) => m._id.toString()), readAt: new Date().toISOString() });
+          io.to(chatUserSocketId).emit('messages:read', {
+            readerId: myId.toString(),
+            chatUserId: myId.toString(),
+            messageIds: unreadMessages.map((message) => message._id.toString()),
+            readAt: new Date().toISOString(),
+          });
         }
       }
 
-      return res.status(200).json({ message: 'Messages marked as read' });
+      return res.status(200).json({
+        message: 'Messages marked as read',
+        messageIds: unreadMessages.map((message) => message._id.toString()),
+      });
     } catch (error) {
       console.error('Error marking messages as read:', error);
       return res.status(500).json({ message: 'Server error' });
@@ -680,12 +704,34 @@ export const messageController = {
     try {
       const myId = req.user._id;
       const { id: blockedUserId } = req.params;
+      if (myId.toString() === blockedUserId) {
+        return res.status(400).json({ message: 'You cannot block yourself' });
+      }
+      const blockedUser = await User.findById(blockedUserId).select('_id');
+      if (!blockedUser) return res.status(404).json({ message: 'User not found' });
       const updatedUser = await User.findByIdAndUpdate(myId, { $addToSet: { blockedUsers: blockedUserId } }, { new: true }).select('blockedUsers');
       const blockedSocketId = getReceiverSocketId(blockedUserId);
-      if (blockedSocketId) io.to(blockedSocketId).emit('chat:blocked', { byUserId: myId.toString() });
+      if (blockedSocketId) io.to(blockedSocketId).emit('chat:blocked', { byUserId: myId.toString(), blockedUserId });
       return res.status(200).json({ message: 'User blocked', blockedUsers: updatedUser.blockedUsers });
     } catch (error) {
       console.error('Error blocking user:', error);
+      return res.status(500).json({ message: 'Server error' });
+    }
+  },
+
+  unblockUser: async (req, res) => {
+    try {
+      const myId = req.user._id;
+      const { id: unblockedUserId } = req.params;
+      const updatedUser = await User.findByIdAndUpdate(
+        myId,
+        { $pull: { blockedUsers: unblockedUserId } },
+        { new: true },
+      ).select('blockedUsers');
+      if (!updatedUser) return res.status(404).json({ message: 'User not found' });
+      return res.status(200).json({ message: 'User unblocked', blockedUsers: updatedUser.blockedUsers });
+    } catch (error) {
+      console.error('Error unblocking user:', error);
       return res.status(500).json({ message: 'Server error' });
     }
   },

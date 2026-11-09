@@ -100,8 +100,7 @@ export const useAuthStore = create((set, get) => ({
   connectSocket: () => {
     const { authUser } = get();
     if (!authUser || get().socket?.connected) return;
-    const socket = io(socketUrl, { withCredentials: true, transports: ['websocket'] });
-    socket.connect();
+    const socket = io(socketUrl, { withCredentials: true, transports: ['websocket', 'polling'] });
 
     socket.on('presence:update', ({ onlineUsers }) => {
       set({ onlineUsers });

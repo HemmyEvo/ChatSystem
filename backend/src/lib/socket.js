@@ -268,7 +268,7 @@ io.on('connection', async (socket) => {
   });
 
   socket.on('game:invite', ({ toUserId, gameType }) => {
-    if (!toUserId || !['whot', 'ludo'].includes(gameType)) return;
+    if (!toUserId || !['whot', 'ludo', 'football', 'tictactoe', 'connect4'].includes(gameType)) return;
 
     const senderSession = getActiveSessionByPlayer(userId);
     if (senderSession) {
@@ -352,26 +352,37 @@ io.on('connection', async (socket) => {
     socket.emit('game:dashboard', me?.gameStats || null);
   });
 
-  socket.on('chat:opened', async ({ chatUserId }) => {
-    const filter = { senderId: chatUserId, receiverId: userId, readBy: { $ne: userId } };
-
+  socket.on('chat:opened', async ({ chatUserId, messageIds = [] }) => {
     try {
+      const filter = { senderId: chatUserId, receiverId: userId, readBy: { $ne: userId }, deletedFor: { $ne: userId } };
       const unreadMessages = await Message.find(filter).select('_id senderId receiverId');
-      if (unreadMessages.length > 0) {
+      if (unreadMessages.length) {
         await Message.updateMany(
           { _id: { $in: unreadMessages.map((m) => m._id) } },
           { $addToSet: { readBy: userId, deliveredTo: userId }, $set: { readAt: new Date() } },
         );
+      }
 
-        const senderSocketId = getReceiverSocketId(chatUserId);
-        if (senderSocketId) {
-          io.to(senderSocketId).emit('messages:read', {
-            readerId: userId,
-            chatUserId,
-            messageIds: unreadMessages.map((m) => m._id.toString()),
-            readAt: new Date().toISOString(),
-          });
-        }
+      const validatedMessageIds = messageIds.length
+        ? (await Message.find({
+          _id: { $in: messageIds },
+          senderId: chatUserId,
+          receiverId: userId,
+          deletedFor: { $ne: userId },
+        }).distinct('_id')).map((id) => id.toString())
+        : unreadMessages.map((message) => message._id.toString());
+      const receiptMessageIds = Array.from(new Set([
+        ...validatedMessageIds,
+        ...unreadMessages.map((message) => message._id.toString()),
+      ]));
+      const senderSocketId = getReceiverSocketId(chatUserId);
+      if (senderSocketId && receiptMessageIds.length) {
+        io.to(senderSocketId).emit('messages:read', {
+          readerId: userId,
+          chatUserId: userId,
+          messageIds: receiptMessageIds,
+          readAt: new Date().toISOString(),
+        });
       }
     } catch (error) {
       console.error('Error in chat:opened:', error);
@@ -444,7 +455,9 @@ io.on('connection', async (socket) => {
     if (receiverSocketId) io.to(receiverSocketId).emit('call:ended', { fromUserId: userId });
   });
 
-  socket.on('call:signal', ({ toUserId, description, candidate }) => {
+  socket.on('call:signal', ({ toUserId, sessionId, description, candidate }) => {
+    const session = callSessionMap.get(sessionId);
+    if (!session || session.status !== 'active' || !session.participants.includes(userId) || !session.participants.includes(toUserId?.toString())) return;
     const receiverSocketId = getReceiverSocketId(toUserId);
     if (!receiverSocketId) {
       socket.emit('call:unavailable', { toUserId, reason: 'offline' });
@@ -453,6 +466,7 @@ io.on('connection', async (socket) => {
 
     io.to(receiverSocketId).emit('call:signal', {
       fromUserId: userId,
+      sessionId: session.id,
       description: description || null,
       candidate: candidate || null,
     });

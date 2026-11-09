@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import authRoutes from './routes/auth.js';
 import messageRoutes from './routes/message.js';
+import pushRoutes from './routes/push.js';
 
 const app = express();
 
@@ -21,5 +22,6 @@ app.get('/health', (req, res) => {
 });
 app.use('/api/auth', authRoutes);
 app.use('/api/message', messageRoutes);
+app.use('/api/push', pushRoutes);
 
 export default app;

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Settings, LogOutIcon, Volume2Icon, VolumeOffIcon, ChevronDown, Download, Pencil, Check } from "lucide-react";
+import { Settings, LogOutIcon, Volume2Icon, VolumeOffIcon, ChevronDown, Download, Pencil, Check, Bell, BellOff } from "lucide-react";
 import { useAuthStore } from "../store/useAuthStore";
 import { useChatStore } from "../store/useChatStore";
+import toast from 'react-hot-toast';
+import { disablePushNotifications, enablePushNotifications } from '../lib/pushNotifications';
 
 const receiveSoundPreview = new Audio("/sounds/notification.mp3");
 const sendSoundPreview = new Audio("/sounds/send.mp3");
@@ -12,7 +14,11 @@ function ProfileHeader() {
   const [selectedImg, setSelectedImg] = useState(null);
   const [openMenu, setOpenMenu] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState(null);
-  const [isInstalled, setIsInstalled] = useState(window.matchMedia?.('(display-mode: standalone)').matches || false);
+  const [isInstalled, setIsInstalled] = useState(
+    window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone || false,
+  );
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [isPushBusy, setIsPushBusy] = useState(false);
   const [bioDraft, setBioDraft] = useState(authUser?.bio || '');
   const [isSavingBio, setIsSavingBio] = useState(false);
   const [editingBio, setEditingBio] = useState(false);
@@ -56,6 +62,20 @@ function ProfileHeader() {
     };
   }, []);
 
+  useEffect(() => {
+    let isMounted = true;
+    if (!('serviceWorker' in navigator)) return undefined;
+    navigator.serviceWorker.ready
+      .then((registration) => registration.pushManager.getSubscription())
+      .then((subscription) => {
+        if (isMounted) setPushEnabled(Boolean(subscription));
+      })
+      .catch((error) => console.error('Unable to check push subscription:', error));
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -70,10 +90,33 @@ function ProfileHeader() {
   };
 
   const handleInstallApp = async () => {
-    if (!installPromptEvent) return;
+    if (!installPromptEvent) {
+      toast('Use your browser menu to choose “Install app” or “Add to Home Screen”.');
+      return;
+    }
     await installPromptEvent.prompt();
     await installPromptEvent.userChoice.catch(() => null);
     setInstallPromptEvent(null);
+  };
+
+  const togglePushNotifications = async () => {
+    setIsPushBusy(true);
+    try {
+      if (pushEnabled) {
+        await disablePushNotifications();
+        setPushEnabled(false);
+        toast.success('Push notifications disabled');
+      } else {
+        await enablePushNotifications();
+        setPushEnabled(true);
+        toast.success('Push notifications enabled');
+      }
+    } catch (error) {
+      console.error('Unable to update push notification settings:', error);
+      toast.error(error.response?.data?.message || error.message || 'Unable to update notification settings');
+    } finally {
+      setIsPushBusy(false);
+    }
   };
 
   const handleRingtoneUpload = (event) => {
@@ -196,6 +239,18 @@ function ProfileHeader() {
                 {soundSettings.send ? <Volume2Icon className="size-4 text-emerald-400" /> : <VolumeOffIcon className="size-4 text-slate-500" />}
               </button>
 
+              {'Notification' in window && 'PushManager' in window && 'serviceWorker' in navigator && (
+                <button
+                  type="button"
+                  disabled={isPushBusy}
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm text-slate-200 hover:bg-white/5 rounded-xl transition-colors disabled:opacity-50"
+                  onClick={togglePushNotifications}
+                >
+                  {pushEnabled ? 'Disable notifications' : 'Enable notifications'}
+                  {pushEnabled ? <BellOff className="size-4 text-emerald-400" /> : <Bell className="size-4 text-slate-400" />}
+                </button>
+              )}
+
               <button
                 className="w-full flex items-center justify-between px-3 py-2 text-sm text-slate-200 hover:bg-white/5 rounded-xl transition-colors"
                 onClick={() => ringtoneInputRef.current?.click()}
@@ -204,12 +259,12 @@ function ProfileHeader() {
                 <span className="max-w-[110px] truncate text-[11px] text-slate-400">{ringtoneName}</span>
               </button>
 
-              {!isInstalled && installPromptEvent && (
+              {!isInstalled && (
                 <button
                   className="w-full flex items-center justify-between px-3 py-2 text-sm text-cyan-300 hover:bg-white/5 rounded-xl transition-colors"
                   onClick={handleInstallApp}
                 >
-                  Install app
+                  {installPromptEvent ? 'Install app' : 'Add to Home Screen'}
                   <Download className="size-4" />
                 </button>
               )}

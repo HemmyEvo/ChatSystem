@@ -132,17 +132,51 @@ const BASE_FORMATION = [
 
 const mirrorPosition = (p) => ({ ...p, x: PITCH_LENGTH - p.x, y: PITCH_WIDTH - p.y });
 
+const initBoardGameState = (gameType, players) => ({
+  board: gameType === 'tictactoe'
+    ? Array(9).fill(null)
+    : Array.from({ length: 6 }, () => Array(7).fill(null)),
+  currentPlayer: players[0],
+  winnerId: null,
+  isDraw: false,
+});
+
+const findBoardWinner = (board, connectLength) => {
+  const rows = board.length;
+  const columns = board[0].length;
+  const directions = [[0, 1], [1, 0], [1, 1], [1, -1]];
+
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const playerId = board[row][column];
+      if (!playerId) continue;
+
+      for (const [rowStep, columnStep] of directions) {
+        const endRow = row + (connectLength - 1) * rowStep;
+        const endColumn = column + (connectLength - 1) * columnStep;
+        if (endRow < 0 || endRow >= rows || endColumn < 0 || endColumn >= columns) continue;
+        if (Array.from({ length: connectLength }).every((_, index) => (
+          board[row + index * rowStep][column + index * columnStep] === playerId
+        ))) return playerId;
+      }
+    }
+  }
+  return null;
+};
+
 const initFootballState = (players) => {
   const teamA = BASE_FORMATION.map((p, i) => ({ ...p, id: `A${i}`, cards: 0 }));
   const teamB = BASE_FORMATION.map((p, i) => ({ ...mirrorPosition(p), id: `B${i}`, cards: 0 }));
+  const kickoffPlayer = teamA[6];
 
   return {
     teams: { [players[0]]: teamA, [players[1]]: teamB },
-    ball: { x: PITCH_LENGTH / 2, y: PITCH_WIDTH / 2, controlledBy: null, possessionTeam: null },
+    ball: { x: kickoffPlayer.x, y: kickoffPlayer.y, controlledBy: kickoffPlayer.id, possessionTeam: players[0] },
     match: { minute: 0, score: { [players[0]]: 0, [players[1]]: 0 }, state: 'kickoff' },
     turn: { currentPlayer: players[0], actionPoints: 5, logs: [] },
     winnerId: null
   };
+
 };
 
 // Math Helpers for Football Interceptions & Movement
@@ -178,7 +212,9 @@ const resetPositions = (state, players, isTeamAKickoff) => {
     const mirrored = mirrorPosition(p);
     return { ...state.teams[players[1]][i], x: mirrored.x, y: mirrored.y };
   });
-  state.ball = { x: PITCH_LENGTH / 2, y: PITCH_WIDTH / 2, controlledBy: null, possessionTeam: isTeamAKickoff ? players[0] : players[1] };
+  const kickoffTeam = isTeamAKickoff ? players[0] : players[1];
+  const kickoffPlayer = state.teams[kickoffTeam][6];
+  state.ball = { x: kickoffPlayer.x, y: kickoffPlayer.y, controlledBy: kickoffPlayer.id, possessionTeam: kickoffTeam };
   state.match.state = 'kickoff';
   state.turn.currentPlayer = isTeamAKickoff ? players[0] : players[1];
   state.turn.actionPoints = 5;
@@ -220,6 +256,17 @@ const buildPublicState = (session, viewerId) => {
       match: session.state.match,
       turn: session.state.turn,
       winnerId: session.state.winnerId,
+      isDraw: session.status === 'completed' && !session.state.winnerId,
+    };
+  }
+
+  if (session.gameType === 'tictactoe' || session.gameType === 'connect4') {
+    return {
+      ...base,
+      board: session.state.board,
+      currentPlayer: session.state.currentPlayer,
+      winnerId: session.state.winnerId,
+      isDraw: session.state.isDraw,
     };
   }
 
@@ -252,6 +299,7 @@ export const createSession = ({ gameType, playerA, playerB }) => {
   let state;
   if (gameType === 'whot') state = initWhotState(players);
   else if (gameType === 'football') state = initFootballState(players);
+  else if (gameType === 'tictactoe' || gameType === 'connect4') state = initBoardGameState(gameType, players);
   else state = initLudoState(players);
 
   const session = { id, gameType, players, state, status: 'active' };
@@ -279,9 +327,40 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
   const isWhot = session.gameType === 'whot';
   const isLudo = session.gameType === 'ludo';
   const isFootball = session.gameType === 'football';
+  const isBoardGame = session.gameType === 'tictactoe' || session.gameType === 'connect4';
 
   const currentPlayerCheck = isFootball ? session.state.turn.currentPlayer : session.state.currentPlayer;
   if (currentPlayerCheck !== playerId) return { error: 'Wait for your turn.' };
+
+  if (isBoardGame) {
+    const board = session.state.board;
+    if (session.gameType === 'tictactoe') {
+      if (action.type !== 'place' || !Number.isInteger(action.index) || action.index < 0 || action.index >= board.length) {
+        return { error: 'Choose a valid square.' };
+      }
+      if (board[action.index]) return { error: 'That square is already occupied.' };
+      board[action.index] = playerId;
+      session.state.winnerId = findBoardWinner([board.slice(0, 3), board.slice(3, 6), board.slice(6, 9)], 3);
+    } else {
+      if (action.type !== 'drop' || !Number.isInteger(action.column) || action.column < 0 || action.column >= board[0].length) {
+        return { error: 'Choose a valid column.' };
+      }
+      let row = board.length - 1;
+      while (row >= 0 && board[row][action.column]) row -= 1;
+      if (row < 0) return { error: 'That column is full.' };
+      board[row][action.column] = playerId;
+      session.state.winnerId = findBoardWinner(board, 4);
+    }
+
+    session.state.isDraw = !session.state.winnerId
+      && board.flat().every(Boolean);
+    if (session.state.winnerId || session.state.isDraw) {
+      session.status = 'completed';
+    } else {
+      session.state.currentPlayer = nextPlayer(session.players, playerId);
+    }
+    return { session };
+  }
 
   // ==========================================
   // WHOT ACTION LOGIC
@@ -473,7 +552,14 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
       s.turn.currentPlayer = opponentId;
       s.turn.actionPoints = 5;
       s.match.minute += 1;
-      if (s.match.minute >= 90) session.status = 'completed';
+      if (s.match.minute >= 90) {
+        session.status = 'completed';
+        const [teamA, teamB] = session.players;
+        s.winnerId = s.match.score[teamA] === s.match.score[teamB]
+          ? null
+          : s.match.score[teamA] > s.match.score[teamB] ? teamA : teamB;
+        s.match.state = 'full_time';
+      }
     };
 
     if (action.type === 'end_turn') {
@@ -490,6 +576,7 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
     if (action.type === 'move') {
       if (footballer.cards === 2) return { error: 'Player is sent off.' };
       const dist = getDistance(footballer, { x: action.targetX, y: action.targetY });
+      if (!Number.isFinite(action.targetX) || !Number.isFinite(action.targetY)) return { error: 'Choose a valid position.' };
       const maxMove = (footballer.pace / 10) * (footballer.stamina / 100); 
       
       if (dist > maxMove) return { error: `Move too far. Max distance: ${maxMove.toFixed(1)}m` };
@@ -578,7 +665,7 @@ export const applyGameAction = ({ sessionId, playerId, action }) => {
       if (shotPower > gkSaveAbility) {
         s.turn.logs.push(`GOAL!!! ${footballer.role} scores from ${Math.round(distToGoal)}m!`);
         s.match.score[playerId] += 1;
-        resetPositions(s, session.players, isPlayerA ? false : true); // Opponent kicks off
+        resetPositions(s, session.players, isPlayerA ? false : true);
       } else {
         s.turn.logs.push(`SAVED by the Keeper!`);
         s.ball.controlledBy = oppGK.id;

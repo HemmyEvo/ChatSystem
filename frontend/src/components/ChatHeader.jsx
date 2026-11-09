@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useChatStore } from '../store/useChatStore';
 import GoBackButton from './GoBackButton';
-import { Ban, Copy, Forward, Reply, Trash2, MoreVertical, X, Image as ImageIcon, PaintBucket, SlidersHorizontal, Phone, Video } from 'lucide-react';
+import { Ban, Copy, Forward, Reply, Trash2, MoreVertical, X, Image as ImageIcon, PaintBucket, SlidersHorizontal, Phone, Video, ShieldCheck } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useCallStore } from '../store/useCallStore';
+import toast from 'react-hot-toast';
 
 const formatLastSeen = (lastSeen) => {
   if (!lastSeen) return 'recently';
@@ -52,7 +53,7 @@ const compressImage = (file, callback) => {
 
 function ChatHeader() {
   const { 
-    selectedUser, setSelectedUser, blockUser, deleteChatHistory, selectedMessages, messages, 
+    selectedUser, setSelectedUser, blockUser, unblockUser, deleteChatHistory, selectedMessages, messages,
     clearSelectedMessages, setReplyTarget, deleteMessageForMe, deleteMessageForEveryone, openForwardModal,
     chatBackground, setChatBackground, chatBubbleColors, setChatBubbleColors, chatBgOpacity, setChatBgOpacity 
   } = useChatStore();
@@ -66,6 +67,7 @@ function ChatHeader() {
   const [showLightbox, setShowLightbox] = useState(false);
   
   const online = onlineUsers.includes(selectedUser?._id);
+  const isInteractionBlocked = selectedUser?.isBlockedByMe || selectedUser?.isBlockedByThem;
   const fileInputRef = useRef(null);
   const menuRef = useRef(null);
   const deleteMenuRef = useRef(null);
@@ -130,6 +132,20 @@ function ChatHeader() {
     });
   };
 
+  const toggleBlock = async () => {
+    try {
+      if (selectedUser?.isBlockedByMe) {
+        await unblockUser(selectedUser._id);
+      } else {
+        await blockUser(selectedUser._id);
+      }
+      setShowMenu(false);
+    } catch (error) {
+      console.error('Unable to update blocked contact:', error);
+      toast.error(error.response?.data?.message || 'Unable to update blocked contact');
+    }
+  };
+
   return (
     <>
       <div className='w-full flex items-center justify-between px-4 py-3 md:px-6 bg-[#202c33] border-b border-[#2f3b43]'>
@@ -189,7 +205,7 @@ function ChatHeader() {
               <button
                 type="button"
                 onClick={() => startCall(selectedUser, { video: false })}
-                disabled={Boolean(activeCallUser) || callStatus === 'ringing'}
+                disabled={Boolean(activeCallUser) || callStatus === 'ringing' || isInteractionBlocked}
                 className='rounded-full p-2 text-slate-300 transition hover:bg-slate-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50'
                 title='Start voice call'
               >
@@ -198,7 +214,7 @@ function ChatHeader() {
               <button
                 type="button"
                 onClick={() => startCall(selectedUser, { video: true })}
-                disabled={Boolean(activeCallUser) || callStatus === 'ringing'}
+                disabled={Boolean(activeCallUser) || callStatus === 'ringing' || isInteractionBlocked}
                 className='rounded-full p-2 text-slate-300 transition hover:bg-slate-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50'
                 title='Start video call'
               >
@@ -257,7 +273,11 @@ function ChatHeader() {
                     </div>
                   </div>
 
-                  <button className='w-full text-left px-3 py-2 hover:bg-[#2d3d45] rounded flex items-center gap-2 text-sm transition-colors' onClick={() => { blockUser(selectedUser._id); setShowMenu(false); }}><Ban size={15} />Block user</button>
+                  {selectedUser?.isBlockedByMe ? (
+                    <button className='w-full text-left px-3 py-2 hover:bg-[#2d3d45] rounded flex items-center gap-2 text-sm transition-colors' onClick={toggleBlock}><ShieldCheck size={15} />Unblock user</button>
+                  ) : (
+                    <button className='w-full text-left px-3 py-2 hover:bg-[#2d3d45] rounded flex items-center gap-2 text-sm transition-colors' onClick={toggleBlock}><Ban size={15} />Block user</button>
+                  )}
                   <button className='w-full text-left px-3 py-2 hover:bg-[#2d3d45] rounded flex items-center gap-2 text-sm text-red-400 transition-colors' onClick={() => { deleteChatHistory(selectedUser._id); setShowMenu(false); }}><Trash2 size={15} />Delete for me</button>
                 </div>
               )}

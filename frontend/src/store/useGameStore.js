@@ -97,7 +97,7 @@ export const useGameStore = create((set, get) => ({
 
     socket.on('game:ended', ({ winnerId }) => {
       const me = useAuthStore.getState().authUser?._id;
-      toast.success(winnerId === me ? 'You won 🎉' : 'Game over. Good match!');
+      toast.success(winnerId == null ? 'Match drawn.' : winnerId === me ? 'You won 🎉' : 'Game over. Good match!');
       localStorage.removeItem('activeGameSessionId');
       set({ activeGame: null, roomRecovery: false });
     });

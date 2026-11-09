@@ -76,6 +76,7 @@ function ChatFooter() {
   const stickerMenuRef = useRef(null);
 
   const {
+    selectedUser,
     friends,
     getFriends,
     shareContactSearchTerm,
@@ -94,6 +95,7 @@ function ChatFooter() {
     addRecentSticker,
     saveCustomSticker,
   } = useChatStore();
+  const isInteractionBlocked = selectedUser?.isBlockedByMe || selectedUser?.isBlockedByThem;
 
   const playSound = (audio) => {
     if (soundSettings.send) {
@@ -358,6 +360,11 @@ function ChatFooter() {
 
   return (
     <div className="relative w-full box-border bg-slate-800 p-3 sm:p-4">
+      {isInteractionBlocked && (
+        <div className="mb-3 rounded-xl border border-amber-400/20 bg-amber-400/10 px-4 py-2 text-center text-sm text-amber-100">
+          {selectedUser.isBlockedByMe ? 'You blocked this contact. Unblock them to send messages or call.' : 'This contact has blocked messaging and calls.'}
+        </div>
+      )}
       {previewMedia && (
         <div className="absolute bottom-full left-0 z-40 flex w-full flex-col gap-4 border-t border-[#2a3942] bg-[#111b21] p-4 shadow-lg">
           <div className="mb-2 flex items-center justify-between text-white">
@@ -406,7 +413,7 @@ function ChatFooter() {
 
       <form onSubmit={handleSendMessage} className="flex w-full items-end gap-2 box-border">
         <div className="relative flex-shrink-0 pb-[6px]" ref={attachMenuRef}>
-          <button type="button" disabled={isRecording || audioBlob} onClick={() => setShowAttachMenu(!showAttachMenu)} className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-700 hover:text-white disabled:opacity-50">
+          <button type="button" disabled={isInteractionBlocked || isRecording || audioBlob} onClick={() => setShowAttachMenu(!showAttachMenu)} className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-700 hover:text-white disabled:opacity-50">
             <Paperclip size={20} />
           </button>
           <div className={`absolute bottom-12 left-0 z-50 flex w-48 origin-bottom-left flex-col gap-2 rounded-lg bg-slate-700 p-2 shadow-xl transition-all duration-200 ${showAttachMenu ? 'scale-100 opacity-100' : 'pointer-events-none scale-95 opacity-0'}`}>
@@ -419,7 +426,7 @@ function ChatFooter() {
         </div>
 
         <div className="relative flex-shrink-0 pb-[6px]" ref={stickerMenuRef}>
-          <button type="button" onClick={() => setShowStickerMenu((value) => !value)} className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-700 hover:text-white">
+          <button type="button" disabled={isInteractionBlocked} onClick={() => setShowStickerMenu((value) => !value)} className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-700 hover:text-white disabled:opacity-50">
             <Sticker size={20} />
           </button>
 
@@ -503,6 +510,7 @@ function ChatFooter() {
               }
             }}
             placeholder={previewMedia ? 'Add a caption...' : 'Type a message...'}
+            disabled={isInteractionBlocked}
             rows={1}
             className="flex-1 w-full min-w-0 resize-none overflow-y-auto rounded-2xl bg-slate-700 px-4 py-2.5 leading-relaxed text-white placeholder-slate-400 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
             style={{ minHeight: '44px' }}
@@ -515,11 +523,11 @@ function ChatFooter() {
               <Square size={18} />
             </button>
           ) : text.trim() || previewMedia || audioBlob ? (
-            <button type="submit" className="rounded-full bg-cyan-500 p-2.5 text-white transition-colors hover:bg-cyan-600">
+            <button type="submit" disabled={isInteractionBlocked} className="rounded-full bg-cyan-500 p-2.5 text-white transition-colors hover:bg-cyan-600 disabled:opacity-50">
               <Send size={18} className="ml-1" />
             </button>
           ) : (
-            <button type="button" onClick={startRecording} className="rounded-full bg-slate-700 p-2.5 text-slate-300 transition-colors hover:bg-slate-600">
+            <button type="button" disabled={isInteractionBlocked} onClick={startRecording} className="rounded-full bg-slate-700 p-2.5 text-slate-300 transition-colors hover:bg-slate-600 disabled:opacity-50">
               <Mic size={18} />
             </button>
           )}

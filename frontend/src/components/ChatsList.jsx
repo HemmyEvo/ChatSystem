@@ -40,7 +40,7 @@ const getLastMessageIcon = (message) => {
 };
 
 function ChatsList() {
-  const { getChats, chats, isUsersLoading, setSelectedUser, searchTerm, setSearchTerm, archivedChatIds, toggleArchiveChat, togglePinChat, pinnedChatIds, typingUsers, subscribeToNewMessages, subscribeToTypingEvents } = useChatStore();
+  const { getChats, chats, isUsersLoading, setSelectedUser, selectedUser, searchTerm, setSearchTerm, archivedChatIds, toggleArchiveChat, togglePinChat, pinnedChatIds, typingUsers, subscribeToNewMessages, subscribeToTypingEvents } = useChatStore();
   const { onlineUsers, authUser, userLastSeenMap } = useAuthStore();
   const [showArchivedView, setShowArchivedView] = useState(false);
   const filteredChats = chats.filter((chat) => chat.username.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -54,13 +54,13 @@ function ChatsList() {
   const renderRow = (chat) => {
     const isOnline = onlineUsers.includes(chat._id);
     const lastMessage = chat.lastMessage;
-    const isMyLastMessage = lastMessage?.senderId === authUser?._id;
-    const isRead = isMyLastMessage && (lastMessage?.readBy || []).includes(chat._id);
-    const isDelivered = isMyLastMessage && ((lastMessage?.deliveredTo || []).includes(chat._id) || isRead);
+    const isMyLastMessage = lastMessage?.senderId?.toString() === authUser?._id?.toString();
+    const isRead = isMyLastMessage && (lastMessage?.readBy || []).some((id) => id?.toString() === chat._id);
+    const isDelivered = isMyLastMessage && ((lastMessage?.deliveredTo || []).some((id) => id?.toString() === chat._id) || isRead);
     const isUserTyping = typingUsers[chat._id];
     const lastSeen = userLastSeenMap[chat._id] || chat.lastSeen;
     return (
-      <div key={chat._id} className="p-3 rounded-xl cursor-pointer hover:bg-slate-700/60 transition-colors border border-transparent hover:border-slate-600" onClick={() => setSelectedUser(chat)}>
+      <div key={chat._id} className={`p-3 rounded-xl cursor-pointer transition-colors border ${selectedUser?._id === chat._id ? 'bg-slate-700/70 border-emerald-500/30' : 'border-transparent hover:bg-slate-700/60 hover:border-slate-600'}`} onClick={() => setSelectedUser(chat)}>
         <div className="flex items-start gap-3">
           <div className={`avatar ${isOnline ? "online" : "offline"}`}><div className="size-10 rounded-full"><img src={chat.profilePicture || "/avatar.png"} alt={chat.username} /></div></div>
           <div className="flex-1 min-w-0">
@@ -82,7 +82,7 @@ function ChatsList() {
                 )}
               </p>
               <div className="flex items-center gap-2 shrink-0">
-                {chat.unreadCount > 0 && !isUserTyping && <span className="min-w-5 h-5 px-1 rounded-full bg-emerald-500 text-[10px] text-white grid place-items-center font-semibold">{chat.unreadCount > 99 ? "99+" : chat.unreadCount}</span>}
+                {chat.unreadCount > 0 && <span aria-label={`${chat.unreadCount} unread messages`} className="min-w-5 h-5 px-1 rounded-full bg-emerald-500 text-[10px] text-white grid place-items-center font-semibold">{chat.unreadCount > 99 ? "99+" : chat.unreadCount}</span>}
                 <button type="button" className={`p-1 rounded hover:bg-slate-600 ${pinnedChatIds.includes(chat._id) ? "text-amber-400" : "text-slate-500"}`} onClick={(e) => { e.stopPropagation(); togglePinChat(chat._id); }} title="Pin chat"><Pin size={14} /></button>
                 <button type="button" className="p-1 rounded hover:bg-slate-600 text-slate-500" onClick={(e) => { e.stopPropagation(); toggleArchiveChat(chat._id); if (showArchivedView && archivedChats.length === 1 && archivedChatIds.includes(chat._id)) { setShowArchivedView(false); } }} title="Archive chat">{archivedChatIds.includes(chat._id) ? <ArchiveRestore size={14} /> : <Archive size={14} />}</button>
               </div>

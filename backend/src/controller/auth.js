@@ -47,6 +47,7 @@ const sanitizeUser = (user) => ({
   bio: user.bio,
   statusItems: user.statusItems,
   friends: user.friends,
+  blockedUsers: user.blockedUsers,
   friendRequestsSent: user.friendRequestsSent,
   friendRequestsReceived: user.friendRequestsReceived,
 });

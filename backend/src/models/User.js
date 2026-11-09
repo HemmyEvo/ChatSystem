@@ -29,6 +29,7 @@ const userSchema = new mongoose.Schema({
     statusItems: [statusItemSchema],
     lastSeen: { type: Date, default: Date.now },
     blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    pushSubscriptions: { type: [mongoose.Schema.Types.Mixed], default: [] },
     friends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     friendRequestsSent: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     friendRequestsReceived: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
@@ -41,11 +42,23 @@ const userSchema = new mongoose.Schema({
         played: { type: Number, default: 0 },
         won: { type: Number, default: 0 },
       },
+      football: {
+        played: { type: Number, default: 0 },
+        won: { type: Number, default: 0 },
+      },
+      tictactoe: {
+        played: { type: Number, default: 0 },
+        won: { type: Number, default: 0 },
+      },
+      connect4: {
+        played: { type: Number, default: 0 },
+        won: { type: Number, default: 0 },
+      },
       totalPlayed: { type: Number, default: 0 },
       totalWon: { type: Number, default: 0 },
       recentMatches: [
         {
-          gameType: { type: String, enum: ['whot', 'ludo'] },
+          gameType: { type: String, enum: ['whot', 'ludo', 'football', 'tictactoe', 'connect4'] },
           opponentId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
           winnerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
           playedAt: { type: Date, default: Date.now },

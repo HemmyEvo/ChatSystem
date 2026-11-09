@@ -45,3 +45,43 @@ self.addEventListener('fetch', (event) => {
     }),
   );
 });
+
+self.addEventListener('push', (event) => {
+  let payload = {};
+  if (event.data) {
+    try {
+      payload = event.data.json();
+    } catch {
+      payload = { body: event.data.text() };
+    }
+  }
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      if (clients.some((client) => client.visibilityState === 'visible')) return;
+      return self.registration.showNotification(payload.title || 'New message', {
+        body: payload.body || 'You have a new message',
+        icon: '/logo.jpg',
+        badge: '/favicon.svg',
+        tag: payload.tag || 'chat-message',
+        data: { url: payload.url || '/' },
+        vibrate: [120, 60, 120],
+      });
+    }),
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = new URL(event.notification.data?.url || '/', self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      const existingClient = clients.find((client) => client.url.startsWith(self.location.origin));
+      if (existingClient) {
+        existingClient.navigate(targetUrl);
+        return existingClient.focus();
+      }
+      return self.clients.openWindow(targetUrl);
+    }),
+  );
+});
